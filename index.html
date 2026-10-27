@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>La Zhuo Anggilam | Portfolio island</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=DM+Sans:wght@400;500&display=swap">
+<link rel="stylesheet" href="css/style.css?v=1">
+</head>
+<body>
+
+<div id="vignette" aria-hidden="true"></div>
+<div id="flash" aria-hidden="true"></div>
+<canvas id="stage" role="img" aria-label="A low-poly floating island with a glass greenhouse cafe. Scroll to travel around it, or use the All projects button for a plain list."></canvas>
+
+<div class="ui">
+  <div class="topbar">
+    <a class="brand" href="#top" id="brand">La.</a>
+    <div class="actions">
+      <button class="pill" type="button" id="btnAll">All projects</button>
+      <button class="pill" type="button" id="btnContact">Contact</button>
+    </div>
+  </div>
+
+  <section class="intro" id="intro" aria-label="Introduction">
+    <h1>Hi, I'm La.</h1>
+    <p class="role">UI/UX designer and artist</p>
+    <p class="lead">I built a small island to keep my work on. Scroll to wander around it, and click the sparkles to peek at what's hiding in each corner.</p>
+    <div class="go"><button type="button" id="btnStart">Start exploring</button></div>
+  </section>
+
+  <section class="caption" id="caption" aria-label="Current stop">
+    <h2 id="capTitle"></h2>
+    <p id="capText"></p>
+    <p class="label">Hiding here</p>
+    <div class="peeks" id="capPeeks"></div>
+  </section>
+
+  <nav class="rail" id="rail" aria-label="Stops on the island"></nav>
+  <p class="hint" id="hint">Keep scrolling to travel around the island</p>
+  <div class="wx-bar">
+    <p class="weather" id="weather" aria-live="polite"></p>
+    <div class="wx-pick" role="group" aria-label="Preview the island in other weather">
+      <button data-wx="live" aria-pressed="true">Live</button><button data-wx="dawn">Dawn</button><button data-wx="night">Night</button><button data-wx="storm">Storm</button><button data-wx="snow">Snow</button>
+    </div>
+  </div>
+</div>
+
+<aside class="panel" id="panel" role="dialog" aria-modal="false" aria-labelledby="panelTitle" aria-hidden="true">
+  <button class="close" type="button" id="panelClose" aria-label="Close details">&times;</button>
+  <div id="panelBody"></div>
+</aside>
+
+<div class="tip" id="tip" aria-hidden="true"></div>
+<div class="spacer" id="spacer"></div>
+<noscript>This portfolio uses 3D graphics and needs JavaScript. Contact: zhuo.la@northeastern.edu</noscript>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/island.js?v=1"></script>
+</body>
+</html>
