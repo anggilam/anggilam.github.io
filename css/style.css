@@ -96,6 +96,36 @@
   .wx-pick button { font: inherit; font-size: 0.78rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; cursor: pointer; }
   .wx-pick button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   body.panel-open .wx-bar { opacity: 0; pointer-events: none; }
+  .pc-wrap { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(5, 6, 16, 0); transition: background 0.35s ease; }
+  .pc-wrap[hidden], .free-help[hidden] { display: none; }
+  .pc-wrap.on { background: rgba(5, 6, 16, 0.55); }
+  .pc-float { display: grid; gap: 14px; justify-items: center; transform-origin: var(--ox) var(--oy); transform: translate(calc(var(--ox) - 50vw), calc(var(--oy) - 50vh)) scale(0.08) rotate(-8deg); opacity: 0; transition: transform 0.45s cubic-bezier(.2,.9,.3,1.15), opacity 0.3s ease; }
+  .pc-wrap.on .pc-float { transform: none; opacity: 1; }
+  .pc-card { position: relative; width: min(560px, 88vw); aspect-ratio: 3 / 2; transform-style: preserve-3d; transition: transform 0.6s ease; cursor: pointer; animation: pcBob 4s ease-in-out infinite; }
+  .pc-card.flipped { transform: rotateY(180deg); }
+  @keyframes pcBob { 0%, 100% { translate: 0 0; rotate: -1.2deg; } 50% { translate: 0 -8px; rotate: 1.2deg; } }
+  .pc-face { position: absolute; inset: 0; border-radius: 12px; backface-visibility: hidden; -webkit-backface-visibility: hidden; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45); overflow: hidden; }
+  .pc-front { background-size: cover; background-position: center; }
+  .pc-back { transform: rotateY(180deg); background: #fbf8f1; color: #2e2a28; display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; padding: 22px; }
+  .pc-msg { border-right: 2px solid #e2d9c8; padding-right: 16px; font-size: 0.95rem; line-height: 1.45; }
+  .pc-msg p { margin: 0 0 10px; }
+  .pc-hand { font-family: "Bricolage Grotesque", sans-serif; font-weight: 800; font-size: 1.5rem; }
+  .pc-sign { font-style: italic; }
+  .pc-addr { display: flex; flex-direction: column; gap: 10px; padding-top: 56px; position: relative; }
+  .pc-addr a { color: #2e2a28; border-bottom: 1.5px solid #cfc4b0; padding-bottom: 4px; text-decoration: none; font-size: 0.95rem; overflow-wrap: anywhere; }
+  .pc-addr a:hover, .pc-addr a:focus-visible { color: #b24a68; border-color: #b24a68; }
+  .pc-stamp { position: absolute; top: 0; right: 0; width: 46px; height: 54px; display: grid; place-items: center; font-size: 26px; border: 2px dashed #c9a47a; border-radius: 4px; background: #fff; }
+  .pc-actions { display: flex; gap: 10px; }
+  .pc-actions button { font: inherit; font-size: 0.9rem; color: #2e2a28; background: #fbf8f1; border: 0; border-radius: 999px; padding: 8px 16px; cursor: pointer; }
+  .pc-actions button:focus-visible { outline: 3px solid #f6b3c6; outline-offset: 2px; }
+  @media (max-width: 520px) { .pc-back { grid-template-columns: 1fr; padding: 14px; gap: 8px; font-size: 0.85rem; } .pc-msg { border-right: 0; padding-right: 0; } .pc-addr { padding-top: 0; } .pc-stamp { display: none; } }
+  @media (prefers-reduced-motion: reduce) { .pc-card { animation: none; } .pc-float, .pc-card { transition: none; } }
+  .free-ui { position: fixed; right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); z-index: 6; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: min(420px, calc(100vw - 32px)); }
+  .free-btn { font: inherit; font-size: 0.85rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; cursor: pointer; }
+  .free-btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .free-help { margin: 0; font-size: 0.78rem; color: var(--muted); text-align: right; background: var(--surface); border-radius: 10px; padding: 6px 10px; }
+  body.free .hint, body.free .rail { opacity: 0; pointer-events: none; }
+  body.free #stage { cursor: grab; }
   .hint {
     position: absolute; left: 0; right: 0; text-align: center; margin: 0;
     bottom: calc(env(safe-area-inset-bottom, 0px) + 22px); color: var(--muted); font-size: 0.95rem; opacity: var(--a, 1);

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>La Zhuo Anggilam | Portfolio island</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=DM+Sans:wght@400;500&display=swap">
-<link rel="stylesheet" href="css/style.css?v=1">
+<link rel="stylesheet" href="css/style.css?v=2">
 </head>
 <body>
 
@@ -52,10 +52,36 @@
 </aside>
 
 <div class="tip" id="tip" aria-hidden="true"></div>
+<div class="free-ui">
+  <p class="free-help" id="freeHelp" hidden>Drag to look around &middot; scroll or pinch to zoom &middot; right-drag, Shift-drag or two fingers to move &middot; WASD / arrows to walk, Q / E down and up</p>
+  <button type="button" class="free-btn" id="freeBtn" aria-pressed="false">Explore freely</button>
+</div>
+<div class="pc-wrap" id="postcard" hidden role="dialog" aria-modal="true" aria-label="Postcard">
+  <div class="pc-float">
+    <div class="pc-card" id="pcCard">
+      <div class="pc-face pc-front" id="pcFront"></div>
+      <div class="pc-face pc-back">
+        <div class="pc-msg">
+          <p class="pc-hand">Hi there!</p>
+          <p>Thanks for visiting the island. I&rsquo;m always happy to hear from you, whether it&rsquo;s a collaboration, an internship or just a hello.</p>
+          <p class="pc-sign">&mdash; La</p>
+        </div>
+        <div class="pc-addr">
+          <span class="pc-stamp" aria-hidden="true">🏝️</span>
+          <a href="mailto:zhuo.la@northeastern.edu">zhuo.la@northeastern.edu</a>
+          <a href="https://www.linkedin.com/in/jula-zul" target="_blank" rel="noopener">LinkedIn</a>
+          <a href="https://github.com/anggilam" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://la-zhuo-anggilam.itch.io/" target="_blank" rel="noopener">itch.io</a>
+        </div>
+      </div>
+    </div>
+    <div class="pc-actions"><button type="button" id="pcFlip">Flip it over</button><button type="button" id="pcClose">Put it back</button></div>
+  </div>
+</div>
 <div class="spacer" id="spacer"></div>
 <noscript>This portfolio uses 3D graphics and needs JavaScript. Contact: zhuo.la@northeastern.edu</noscript>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="js/island.js?v=1"></script>
+<script src="js/island.js?v=2"></script>
 </body>
 </html>

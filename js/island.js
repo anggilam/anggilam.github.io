@@ -73,7 +73,7 @@
     { title: 'Cactus forest', text: 'Spiky, quiet, and full of small secrets.', projects: ['graveyard'], pos: [-0.2, 8.5, -1.8], tgt: [-1.0, 1.8, -9.6] },
     { title: 'Animal pen', text: 'Two odd creatures graze here. A painter left an easel beside the fence.', projects: ['landscape'], pos: [-2.8, 6.2, 4.0], tgt: [-6.0, 0.6, -2.8] },
     { title: 'The mochi house', text: 'Hay, an old TV, and something watching from the bales.', projects: ['ted', 'teddy'], pos: [-10.9, 3.5, 12.6], tgt: [-7.1, 1.1, 6.9] },
-    { title: 'Greenhouse cafe', text: 'Step inside: glass, wire, and far too many plants. The coffee is imaginary.', projects: ['mango', 'frog', 'experimental'], pos: [0.9, 2.3, 7.8], tgt: [1.0, 0.9, 1.4] },
+    { title: 'Greenhouse cafe', text: 'Step inside: glass, wire, and far too many plants. The coffee is imaginary.', projects: ['mango', 'frog'], pos: [0.3, 2.3, 9.0], tgt: [1.5, 1.0, 5.5] },
     { title: 'Upstairs workspace', text: 'Up a small stair, a loft inside the greenhouse.', projects: ['sleepypaws', 'concept', 'gameui'], pos: [3.1, 3.6, 6.6], tgt: [4.4, 1.9, 1.2] },
     { title: 'The falls and the grey-sand beach', text: 'Water cascades off the edge into a floating pool. Say hi at the sign, or poke the crab.', projects: ['contact'], pos: [17.0, 3.2, 2.6], tgt: [9.6, -3.6, -6.0] }
   ];
@@ -290,7 +290,7 @@
   })();
   // Weather preview buttons. Keep false for the public site; open the site with ?preview to see them anyway.
   var SHOW_WEATHER_BUTTONS = false;
-  if (!SHOW_WEATHER_BUTTONS && !/preview/.test(location.search)) { var wxp = document.querySelector('.wx-pick'); if (wxp) wxp.style.display = 'none'; }
+  if (!SHOW_WEATHER_BUTTONS && !/preview/.test(location.search)) Array.prototype.forEach.call(document.querySelectorAll('.wx-pick'), function (el) { el.style.display = 'none'; });
   function previewWeather(cond) {
     if (cond === 'live' || !WX[cond]) { previewing = null; setWeather(liveCond, liveReal); }
     else { previewing = cond; setWeather(cond, false, true); }
@@ -344,25 +344,48 @@
 
   /* ----- Things that fade out of the way when they block the view of what matters ----- */
   var faders = [];
-  function fadeable(group) {
-    var mats = [];
-    group.traverse(function (o) {
-      if (!o.isMesh || !o.material || o.material.visible === false) return;
-      if (!o.material.userData.fadeOwn) { o.material = o.material.clone(); o.material.userData.fadeOwn = true; o.material.userData.base = o.material.opacity; o.material.userData.baseDW = o.material.depthWrite; o.material.userData.baseT = o.material.transparent; }
-      mats.push(o.material);
+  function glassMat(tint, base) {
+    return new THREE.ShaderMaterial({
+      uniforms: { tint: { value: new THREE.Color(tint) }, base: { value: base }, fade: { value: 1 } },
+      vertexShader: 'varying vec3 vView; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vView = mv.xyz; gl_Position = projectionMatrix * mv; }',
+      fragmentShader: 'uniform vec3 tint; uniform float base; uniform float fade; varying vec3 vView; void main(){ vec3 n = normalize(cross(dFdx(vView), dFdy(vView))); vec3 v = normalize(-vView); if (dot(n, v) < 0.0) n = -n; float ndv = clamp(dot(n, v), 0.0, 1.0); float fres = pow(1.0 - ndv, 3.0); vec3 L = normalize(vec3(0.35, 0.75, 0.55)); float spec = pow(max(dot(reflect(-L, n), v), 0.0), 70.0); float sky = smoothstep(0.2, 1.0, n.y) * 0.12; vec3 col = mix(tint, vec3(1.0), fres * 0.75 + sky) + spec * 0.9; gl_FragColor = vec4(col, clamp(base + fres * 0.55 + spec * 0.7 + sky * 0.4, 0.0, 0.95) * fade); }',
+      transparent: true, depthWrite: false, side: THREE.DoubleSide, extensions: { derivatives: true }
     });
-    faders.push({ g: group, mats: mats, k: 1 });
+  }
+  // only the pieces actually in the way fade (plus the small object they belong to), never the whole building
+  function fadeable(group) {
+    var items = [];
+    group.traverse(function (o) {
+      if (!o.isMesh || !o.material || o.material.visible === false || o.userData.fadeItem || o.userData.noFade) return;
+      var m = o.material.clone(); o.material = m;
+      var it = { o: o, m: m, k: 1, hit: false, base: m.opacity, baseDW: m.depthWrite, baseT: m.transparent };
+      o.userData.fadeItem = it; items.push(it);
+    });
+    faders.push({ g: group, items: items });
   }
   var fadeRay = new THREE.Raycaster(), fadeTick = 0;
-  function updateFaders(dt, camPos, look) {
+  function updateFaders(dt, camPos, look, targets, off) {
     fadeTick++;
-    var dir = new THREE.Vector3().subVectors(look, camPos), dist = dir.length(); dir.normalize();
+    var pts = off ? [] : [look].concat(targets || []), dir = new THREE.Vector3(), check = fadeTick % 3 === 0;
     faders.forEach(function (f) {
-      if (fadeTick % 3 === 0) { fadeRay.set(camPos, dir); fadeRay.far = Math.max(0.1, dist - 0.6); f.block = fadeRay.intersectObject(f.g, true).length > 0; }
-      f.k += ((f.block ? 0.12 : 1) - f.k) * (1 - Math.exp(-dt * 6));
-      f.mats.forEach(function (m) {
-        var ud = m.userData; m.opacity = ud.base * f.k;
-        var faded = f.k < 0.98; m.transparent = faded || ud.baseT; m.depthWrite = faded ? false : ud.baseDW;
+      if (check) {
+        f.items.forEach(function (it) { it.hit = false; });
+        pts.forEach(function (pt) {
+          dir.subVectors(pt, camPos); var dist = dir.length(); dir.normalize();
+          fadeRay.set(camPos, dir); fadeRay.far = Math.max(0.1, dist - 0.6);
+          fadeRay.intersectObject(f.g, true).forEach(function (h) {
+            var it = h.object.userData.fadeItem; if (it) it.hit = true;
+            var par = h.object.parent;
+            if (par && par !== f.g && par.children.length < 40) par.children.forEach(function (c) { if (c.userData.fadeItem) c.userData.fadeItem.hit = true; });
+          });
+        });
+      }
+      f.items.forEach(function (it) {
+        it.k += ((it.hit ? 0.12 : 1) - it.k) * (1 - Math.exp(-dt * 6));
+        var m = it.m;
+        if (m.uniforms && m.uniforms.fade) { m.uniforms.fade.value = it.k; return; }
+        m.opacity = it.base * it.k;
+        var faded = it.k < 0.98; m.transparent = faded || it.baseT; m.depthWrite = faded ? false : it.baseDW;
       });
     });
   }
@@ -516,8 +539,11 @@
   /* ------------------------------------------------------------------ */
   /* Island                                                              */
   /* ------------------------------------------------------------------ */
-  var GH_X = 0.5, GH_Z = 2.2, GX = 2, GZ = 2, DX = GX + GH_X, DZ = GZ + GH_Z, DR = 6.2;       // greenhouse dome (GX/GZ are local to GH)
+  var GH_X = 0.5, GH_Z = 2.2, GX = 2, GZ = 2, DX = GX + GH_X, DZ = GZ + GH_Z, DR = 6.2;
+  // Domen Aarhus (Dome of Visions 3.0): 24 m across, 10.5 m tall, so the dome is a spherical cap a little lower than a half sphere
+  var DOME_RS = DR, DOME_CY = 0; // a half sphere       // greenhouse dome (GX/GZ are local to GH)
   var GH = new THREE.Group(); GH.position.set(GH_X, 0, GH_Z); world.add(GH);
+  var DECOR = new THREE.Group(); GH.add(DECOR); // cafe tables and plants, which can fade out of the way
   var LAKE = { x: 7.6, z: -6.0, r: 4.2 };   // big lake hugging the back-right rim
   var CACT = { x: -0.8, z: -9.8 };          // cactus forest, back centre
   var PEN = { x: -6.3, z: -4.2 };           // animal pen, centre-left, the largest open area
@@ -532,7 +558,7 @@
       var a = R() * 6.28, d = R() * 11;
       if (Math.hypot(Math.cos(a) * d - LAKE.x, Math.sin(a) * d - LAKE.z) < 6.6) { R(); continue; }
       var patch = new THREE.Mesh(new THREE.CircleGeometry(0.8 + R() * 1.4, 7), M(i % 2 ? 0x86dc5e : 0x5ec243));
-      patch.rotation.x = -Math.PI / 2; patch.position.set(Math.cos(a) * d, 0.02, Math.sin(a) * d); patch.receiveShadow = true; world.add(patch);
+      patch.rotation.x = -Math.PI / 2; patch.position.set(Math.cos(a) * d, 0.012 + i * 0.003, Math.sin(a) * d); patch.receiveShadow = true; world.add(patch);
     }
     var soil = new THREE.Mesh(new THREE.CylinderGeometry(13, 12, 1.2, 80, 2, true), M(0xc98a4f));
     soil.position.y = -1.0; soil.receiveShadow = true; world.add(soil); ISLAND_SIDES.push(soil);
@@ -633,7 +659,7 @@
   var cactusGroup = new THREE.Group(); world.add(cactusGroup);
   (function () {
     var sand = new THREE.Mesh(new THREE.CircleGeometry(3.4, 12), M(0xf0d9a0));
-    sand.rotation.x = -Math.PI / 2; sand.position.set(CACT.x, 0.025, CACT.z); sand.receiveShadow = true; world.add(sand);
+    sand.rotation.x = -Math.PI / 2; sand.position.set(CACT.x, 0.065, CACT.z); sand.receiveShadow = true; world.add(sand);
     // a round limb swept along a path, with its radius changing along the way (low poly)
     var CK = 0.0105;
     function limb(g, pts, radii, col, spines) {
@@ -706,16 +732,17 @@
     // outline of the pen (relative to its centre), traced loosely from the sketch's lumpy enclosure
     var penPts = [[-2.3, 1.2], [-2.6, 0.1], [-2.2, -1.1], [-1.4, -1.9], [-0.2, -2.1], [0.9, -1.7], [1.6, -2.2], [2.5, -1.4], [2.4, -0.2], [2.8, 0.8], [2.0, 1.7], [0.7, 1.6], [-0.4, 2.1], [-1.4, 1.8]];
     penPts = penPts.map(function (q) { return [q[0] * 1.35, q[1] * 1.35]; });
+    var penFence = new THREE.Group(); world.add(penFence); FADE_LATER.push(penFence);
     var gate = 11; // leave the segment from point 11 to 12 open as the way in
     for (var pi = 0; pi < penPts.length; pi++) {
       if (pi === gate) continue;
       var A = penPts[pi], B = penPts[(pi + 1) % penPts.length], ax = px + A[0], az = pz + A[1], bx = px + B[0], bz = pz + B[1];
       var len = Math.hypot(bx - ax, bz - az), np = Math.max(1, Math.round(len / 0.6));
-      for (var k = 0; k <= np; k++) cyl(0.05, 0.06, 0.8, 5, 0xb98558, ax + (bx - ax) * k / np, 0.4, az + (bz - az) * k / np, world);
-      var rail = box(0.05, 0.06, len, 0xcf9d6c, (ax + bx) / 2, 0.62, (az + bz) / 2, world); rail.rotation.y = Math.atan2(bx - ax, bz - az);
+      for (var k = 0; k <= np; k++) cyl(0.05, 0.06, 0.8, 5, 0xb98558, ax + (bx - ax) * k / np, 0.4, az + (bz - az) * k / np, penFence);
+      var rail = box(0.05, 0.06, len, 0xcf9d6c, (ax + bx) / 2, 0.62, (az + bz) / 2, penFence); rail.rotation.y = Math.atan2(bx - ax, bz - az);
     }
     var dirtShape = new THREE.Shape(); penPts.forEach(function (q, i) { if (i) dirtShape.lineTo(q[0] * 1.04, -q[1] * 1.04); else dirtShape.moveTo(q[0] * 1.04, -q[1] * 1.04); });
-    var dirt = new THREE.Mesh(new THREE.ShapeGeometry(dirtShape), M(0xc9b08a)); dirt.rotation.x = -Math.PI / 2; dirt.position.set(px, 0.02, pz); dirt.receiveShadow = true; world.add(dirt);
+    var dirt = new THREE.Mesh(new THREE.ShapeGeometry(dirtShape), M(0xc9b08a)); dirt.rotation.x = -Math.PI / 2; dirt.position.set(px, 0.06, pz); dirt.receiveShadow = true; world.add(dirt);
 
     function creature(outline, ox, oy, sc, depth, col, eye, tail, x, z, rot, amp) {
       var g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = rot; world.add(g);
@@ -799,8 +826,35 @@
     }
     function meshOf(arr, mat) { var gg = new THREE.BufferGeometry(); gg.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3)); gg.computeVertexNormals(); var m = new THREE.Mesh(gg, mat); m.castShadow = true; m.receiveShadow = true; wrap.add(m); return m; }
     cyl(2.75, 2.8, 0.1, 12, 0xf3ede2, 0, 0.05, 0, g);
-    meshOf(buf.outer, new THREE.MeshStandardMaterial({ color: 0xf6b3c6, flatShading: true, roughness: 0.9, side: THREE.DoubleSide }));
-    meshOf(buf.cut, new THREE.MeshStandardMaterial({ color: 0xffd9e3, flatShading: true, roughness: 0.95, side: THREE.DoubleSide }));
+    meshOf(buf.outer, new THREE.MeshStandardMaterial({ color: 0xf6b3c6, flatShading: true, roughness: 0.6, side: THREE.DoubleSide, transparent: true, opacity: 0.72, depthWrite: false })).renderOrder = 6;
+    meshOf(buf.cut, new THREE.MeshStandardMaterial({ color: 0xffd9e3, flatShading: true, roughness: 0.7, side: THREE.DoubleSide, transparent: true, opacity: 0.8, depthWrite: false })).renderOrder = 6;
+    // red beans placed the way the tetrapods are: at uneven gaps around the bottom edge, some alone, some in pairs,
+    // a few stacked three high; some sit just inside the mochi and some have spilled onto the plate
+    // [position around the edge, outside the mochi?, how many in the pile]
+    // sixteen beans spread unevenly all the way round: some alone, some stuck together in little clumps of two or three
+    // [angle around the mochi in radians (0 = the bite), outside the mochi?, how many stuck together]
+    [[0.3, 1, 1], [0.75, 0, 2], [1.5, 1, 1], [2.1, 1, 3], [2.9, 0, 1], [3.6, 1, 2], [4.3, 0, 1], [5.0, 1, 1], [5.6, 0, 2]].forEach(function (pile) {
+      var raz = pile[0] + (R() - 0.5) * 0.12, ep = rc(raz, EL0, MRm), edge = Math.hypot(ep.x, ep.z);
+      var rr = Math.min(2.6, edge * (pile[1] ? 1.04 + R() * 0.3 : 0.58 + R() * 0.32)), px0 = Math.sin(raz) * rr, pz0 = Math.cos(raz) * rr, tx = Math.cos(raz), tz = -Math.sin(raz), nx = Math.sin(raz), nz = Math.cos(raz);
+      for (var bi = 0; bi < pile[2]; bi++) {
+        // clumped beans sit right against each other; the third of a clump nestles in beside the first two
+        var third = pile[2] === 3 && bi === 2, off = pile[2] === 1 || third ? 0 : (bi - 0.5) * 0.27, out = third ? 0.23 : 0;
+        var bean = sph(0.13, 0x5e1d26, px0 + tx * off + nx * out, 0.2, pz0 + tz * off + nz * out, g, 0, 1.15, 0.9, 1);
+        bean.rotation.set((R() - 0.5) * 0.5, R() * 6, (R() - 0.5) * 0.5); bean.castShadow = true;
+        var keel = box(0.1, 0.01, 0.018, 0xf3e8dc, 0, 0.125, 0, bean); keel.castShadow = false;
+      }
+    });
+    // a couple of strays that rolled off the plate onto the island
+    var strays = 0, stTries = 0;
+    while (strays < 2 && stTries < 80) {
+      stTries++;
+      var sa = (R() < 0.5 ? -1 : 1) * (0.9 + R() * 0.8), sr = 3.0 + R() * 1.1, lx = Math.sin(sa) * sr, lz = Math.cos(sa) * sr; // strays rolled out to either side of the bite
+      var wx = MOCHI.x + lx * Math.cos(g.rotation.y) + lz * Math.sin(g.rotation.y), wz = MOCHI.z - lx * Math.sin(g.rotation.y) + lz * Math.cos(g.rotation.y);
+      if (Math.hypot(wx, wz) > 12.4 || Math.hypot(wx - DX, wz - DZ) < DR + 0.4) continue;
+      var sb = sph(0.13, 0x5e1d26, lx, 0.12, lz, g, 0, 1.15, 0.9, 1); sb.rotation.set((R() - 0.5) * 0.6, R() * 6, (R() - 0.5) * 0.6); sb.castShadow = true;
+      box(0.1, 0.01, 0.018, 0xf3e8dc, 0, 0.125, 0, sb).castShadow = false;
+      strays++;
+    }
     var ankoMat = new THREE.MeshStandardMaterial({ color: 0x8a3048, flatShading: true, roughness: 0.5, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false });
     var am = meshOf(buf.anko, ankoMat); am.castShadow = false;
     var ac = meshOf(buf.ankoCut, ankoMat.clone()); ac.material.opacity = 0.28; ac.castShadow = false;
@@ -874,12 +928,17 @@
     var geo = new THREE.IcosahedronGeometry(DR, 1).toNonIndexed(), p = geo.attributes.position, keep = [];
     for (var i = 0; i < p.count; i += 3) {
       var cy = (p.getY(i) + p.getY(i + 1) + p.getY(i + 2)) / 3;
-      if (cy > 0.05) for (var k = 0; k < 3; k++) keep.push(p.getX(i + k), Math.max(p.getY(i + k), 0), p.getZ(i + k));
+      if (cy > 0.05) for (var k = 0; k < 3; k++) {
+        // points that dip below the ground are settled onto the base circle, so nothing sticks in or out at the bottom
+        var vx = p.getX(i + k), vy = p.getY(i + k), vz = p.getZ(i + k);
+        if (vy < 0.01) { var hr = Math.hypot(vx, vz) || 1; vx *= (DR - 0.12) / hr; vz *= (DR - 0.12) / hr; vy = 0.2; } // tucked just inside the base wall
+        keep.push(vx, vy, vz);
+      }
     }
     var dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.Float32BufferAttribute(keep, 3)); dg.computeVertexNormals();
     var glass = new THREE.Mesh(dg, new THREE.MeshStandardMaterial({ color: 0xcdeeff, transparent: true, opacity: 0.16, roughness: 0.1, flatShading: true, side: THREE.DoubleSide, depthWrite: false }));
-    glass.renderOrder = 5; g.add(glass);
-    var frameMat = new THREE.MeshStandardMaterial({ color: 0xf4fbff, flatShading: true, roughness: 0.6 });
+    glass.renderOrder = 5;
+    var frameMat = new THREE.MeshStandardMaterial({ color: 0xf4fbff, flatShading: true, roughness: 0.6, transparent: true, opacity: 0.35, depthWrite: false });
     var shell = new THREE.Group(); g.add(shell); shell.add(glass);
     var seen = {}, vseen = {};
     function key(v) { return Math.round(v.x * 50) + ',' + Math.round(v.y * 50) + ',' + Math.round(v.z * 50); }
@@ -887,11 +946,11 @@
       var vs = [0, 1, 2].map(function (q) { return new THREE.Vector3(keep[t + q * 3], keep[t + q * 3 + 1], keep[t + q * 3 + 2]); });
       for (var e = 0; e < 3; e++) {
         var a = vs[e], b = vs[(e + 1) % 3], ek = [key(a), key(b)].sort().join('|');
-        if (!seen[ek]) { seen[ek] = 1; strut(a, b, 0.06, 0xf4fbff, shell).material = frameMat; }
-        if (!vseen[key(a)]) { vseen[key(a)] = 1; var j = new THREE.Mesh(new THREE.IcosahedronGeometry(0.11, 0), frameMat); j.position.copy(a); shell.add(j); }
+        if (!seen[ek]) { seen[ek] = 1; if (!(a.y < 0.25 && b.y < 0.25)) strut(a, b, 0.06, 0xf4fbff, shell).material = frameMat; }
+        if (!vseen[key(a)]) { vseen[key(a)] = 1; if (a.y > 0.25) { var j = new THREE.Mesh(new THREE.IcosahedronGeometry(0.11, 0), frameMat); j.position.copy(a); shell.add(j); } }
       }
     }
-    var wall = new THREE.Mesh(new THREE.CylinderGeometry(DR, DR, 0.45, 18, 1, true), new THREE.MeshStandardMaterial({ color: 0xd9c8aa, flatShading: true, side: THREE.DoubleSide }));
+    var wall = new THREE.Mesh(new THREE.CylinderGeometry(DR, DR, 0.45, 72, 1, true), new THREE.MeshStandardMaterial({ color: 0xd9c8aa, flatShading: true, side: THREE.DoubleSide }));
     wall.position.y = 0.22; g.add(wall);
     domeShell = shell;
     var floor = new THREE.Mesh(new THREE.CylinderGeometry(DR - 0.15, DR - 0.15, 0.08, 18), M(0xead9bd)); floor.position.y = 0.05; floor.receiveShadow = true; g.add(floor);
@@ -899,24 +958,33 @@
   })();
 
   function table(x, z, c1, c2) {
-    cyl(0.5, 0.5, 0.05, 10, 0xf2e4cc, x, 0.75, z, GH); cyl(0.05, 0.08, 0.75, 6, 0x6b5a4e, x, 0.37, z, GH);
-    cyl(0.1, 0.08, 0.12, 6, 0xffffff, x + 0.15, 0.84, z - 0.05, GH);
+    cyl(0.5, 0.5, 0.05, 10, 0xf2e4cc, x, 0.75, z, DECOR); cyl(0.05, 0.08, 0.75, 6, 0x6b5a4e, x, 0.37, z, DECOR);
+    cyl(0.1, 0.08, 0.12, 6, 0xffffff, x + 0.15, 0.84, z - 0.05, DECOR);
     [[-0.8, 0.1, c1, 0], [0.8, -0.1, c2, Math.PI]].forEach(function (c) {
-      var ch = new THREE.Group(); ch.position.set(x + c[0], 0, z + c[1]); ch.rotation.y = c[3]; GH.add(ch);
+      var ch = new THREE.Group(); ch.position.set(x + c[0], 0, z + c[1]); ch.rotation.y = c[3]; DECOR.add(ch);
       box(0.4, 0.05, 0.4, c[2], 0, 0.45, 0, ch); box(0.4, 0.45, 0.05, c[2], 0, 0.7, -0.18, ch);
       [[-0.15, -0.15], [0.15, -0.15], [-0.15, 0.15], [0.15, 0.15]].forEach(function (l) { cyl(0.025, 0.025, 0.45, 4, 0x6b5a4e, l[0], 0.22, l[1], ch); });
     });
   }
   (function cafe() {
-    box(2.7, 0.9, 0.7, 0xb98558, 0.5, 0.45, -1.3, GH);
-    box(2.85, 0.08, 0.85, 0xe8c898, 0.5, 0.94, -1.3, GH);
-    box(0.4, 0.4, 0.3, 0xc8ccd6, -0.6, 1.18, -1.45, GH); box(0.14, 0.12, 0.14, 0xff8fa3, -0.6, 1.44, -1.45, GH);
-    cyl(0.07, 0.06, 0.1, 6, 0xffffff, -0.15, 1.03, -1.2, GH);
-    cyl(0.07, 0.06, 0.1, 6, 0xffffff, 1.6, 1.03, -1.2, GH); cyl(0.09, 0.09, 0.02, 6, 0xf6b26b, 1.6, 1.0, -1.2, GH);
-    var bd = new THREE.Group(); bd.position.set(-1.35, 0, -0.4); bd.rotation.y = 0.5; GH.add(bd);
+    // bar counter
+    box(2.7, 0.9, 0.66, 0x5a4636, 1.0, 0.45, 3.6, GH);
+    var barPlanks = [0xd9b27c, 0xc9a27a, 0xb08a62, 0xe8dcc4, 0x9a7f62, 0xd2b48c, 0xf0e6d2, 0xa88a68];
+    for (var bpk = 0; bpk < 20; bpk++) { var bpb = box(0.13, 0.88, 0.02, barPlanks[(bpk * 5) % barPlanks.length], -0.28 + bpk * 0.135, 0.45, 3.94, GH); bpb.castShadow = false; }
+    for (var bps = 0; bps < 5; bps++) [-0.36, 2.36].forEach(function (sx2) { box(0.02, 0.88, 0.13, barPlanks[(bps * 3 + 1) % barPlanks.length], sx2, 0.45, 3.33 + bps * 0.135, GH).castShadow = false; });
+    box(2.9, 0.07, 0.86, 0xc9935a, 1.0, 0.93, 3.6, GH);
+    // glass cloche with pastries, a jam jar, a little price sign and a vase on the counter
+    cyl(0.2, 0.2, 0.015, 12, 0xe8f4ff, -0.05, 0.975, 3.55, GH); cyl(0.03, 0.05, 0.07, 6, 0xe8f4ff, -0.05, 0.94, 3.55, GH);
+    sph(0.07, 0xd9a35c, -0.1, 1.02, 3.55, GH, 0, 1.3, 0.6, 1); sph(0.065, 0xe0b06a, 0.02, 1.02, 3.58, GH, 0, 1.2, 0.6, 1);
+    var cloche = new THREE.Mesh(new THREE.SphereGeometry(0.19, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xeef8ff, roughness: 0.05, transparent: true, opacity: 0.3, depthWrite: false }));
+    cloche.position.set(-0.05, 0.98, 3.55); cloche.scale.y = 1.1; GH.add(cloche); sph(0.025, 0xeef8ff, -0.05, 1.2, 3.55, GH, 0);
+    cyl(0.08, 0.08, 0.18, 8, 0x7a2b2b, -0.25, 1.06, 3.75, GH); cyl(0.085, 0.085, 0.03, 8, 0x3a3a3a, -0.25, 1.16, 3.75, GH);
+    var price = box(0.18, 0.12, 0.01, 0xffffff, 1.7, 1.03, 3.85, GH); price.rotation.x = -0.25;
+    cyl(0.04, 0.05, 0.12, 6, 0x2f3d6b, 2.1, 1.03, 3.55, GH); cone(0.06, 0.18, 4, 0xf6d36b, 2.1, 1.18, 3.55, GH);
+    var bd = new THREE.Group(); bd.position.set(3.2, 0, 3.9); bd.rotation.y = -0.4; GH.add(bd);
     box(0.7, 0.9, 0.05, 0x2f3a36, 0, 0.7, 0, bd); plane(0.62, 0.82, texSign('cafe', 128, 192, '#2f3a36', '#f6f1e6', 52), 0, 0.7, 0.03, bd);
     cyl(0.03, 0.03, 0.4, 4, 0x8a5a3c, -0.25, 0.2, -0.15, bd).rotation.x = 0.2; cyl(0.03, 0.03, 0.4, 4, 0x8a5a3c, 0.25, 0.2, -0.15, bd).rotation.x = 0.2;
-    table(-1.8, 3.0, 0xff8fa3, 0x9d90e0); table(1.9, 4.0, 0xffd36b, 0x6cc4a8); table(4.6, 3.8, 0x7ec8e3, 0xff9f7a);
+    table(0.4, -0.6, 0xff8fa3, 0x9d90e0); table(2.4, 6.0, 0xffd36b, 0x6cc4a8); table(4.6, 3.8, 0x7ec8e3, 0xff9f7a);
     for (var i = 0; i < 24; i++) {
       var a = i / 24 * 6.283, m = new THREE.MeshBasicMaterial({ color: 0xffe9a8, transparent: true });
       var b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.07, 0), m);
@@ -924,42 +992,96 @@
     }
     var pts = []; for (var q = 0; q < 24; q++) { var aa = q / 24 * 6.283; pts.push(new THREE.Vector3(GX + Math.cos(aa) * 4.6, 3.6 + Math.sin(aa * 6) * 0.22 + 0.05, GZ + Math.sin(aa) * 4.6)); }
     GH.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x4a3f55 })));
-    [[1.0, 3.0], [3.4, 3.2], [-0.5, 1.6]].forEach(function (h) {
-      var top = Math.sqrt(DR * DR - (h[0] - GX) * (h[0] - GX) - (h[1] - GZ) * (h[1] - GZ)) - 0.05;
-      var hg = new THREE.Group(); hg.position.set(h[0], 3.3, h[1]); GH.add(hg);
-      sph(0.22, 0xd98c6a, 0, 0, 0, hg, 0, 1, 0.8, 1); sph(0.26, 0x62bf78, 0, 0.2, 0, hg, 0); sph(0.18, 0x7bd08a, 0.15, 0.1, 0.1, hg, 0);
+    [[1.0, 3.0], [3.4, 3.2], [-1.9, 1.5]].forEach(function (h) {
+      var top = (Math.sqrt(DOME_RS * DOME_RS - (h[0] - GX) * (h[0] - GX) - (h[1] - GZ) * (h[1] - GZ)) + DOME_CY) * 0.86 - 0.05; // stay under the flat glass facets
+      var hg = new THREE.Group(); hg.position.set(h[0], 3.3, h[1]); DECOR.add(hg);
+      var purple = h[0] < -1.5; sph(0.22, purple ? 0x2e2e34 : 0xd98c6a, 0, 0, 0, hg, 0, 1, 0.8, 1); sph(0.26, purple ? 0x6a3a8f : 0x62bf78, 0, 0.2, 0, hg, 0); sph(0.18, purple ? 0x8a4fb0 : 0x7bd08a, 0.15, 0.1, 0.1, hg, 0);
       cone(0.06, 0.4, 4, 0x4aa863, 0.2, -0.3, 0, hg).rotation.x = Math.PI; cone(0.06, 0.55, 4, 0x4aa863, -0.2, -0.35, 0.05, hg).rotation.x = Math.PI;
-      strut(new THREE.Vector3(h[0], 3.5, h[1]), new THREE.Vector3(h[0], top, h[1]), 0.01, 0x4a3f55, GH);
+      strut(new THREE.Vector3(h[0], 3.5, h[1]), new THREE.Vector3(h[0], top, h[1]), 0.01, 0x4a3f55, DECOR);
+    });
+  })();
+
+  (function cuttingsCorner() {
+    // free plant cuttings on two pallet tables, under the hanging purple plant
+    var cg = new THREE.Group(); cg.position.set(-2.4, 0, 1.3); cg.rotation.y = Math.PI / 2 - 0.15; DECOR.add(cg);
+    function pallet(x, z) {
+      for (var sl = 0; sl < 6; sl++) box(0.17, 0.035, 0.75, sl === 2 ? 0x9a4a3a : [0xc9a47a, 0xb89470, 0xd4b48a][sl % 3], x - 0.47 + sl * 0.19, 0.56, z, cg);
+      [[-0.48, -0.32], [0.48, -0.32], [-0.48, 0.32], [0.48, 0.32], [0, -0.32], [0, 0.32]].forEach(function (b) { box(0.12, 0.54, 0.1, 0xb08a62, x + b[0], 0.27, z + b[1], cg); });
+    }
+    pallet(-0.55, 0); pallet(0.55, 0.05);
+    var jarMat = new THREE.MeshStandardMaterial({ color: 0xe8f6ff, transparent: true, opacity: 0.3, roughness: 0.05, depthWrite: false });
+    [[0.25, -0.15], [0.45, 0.15], [0.7, -0.1], [0.85, 0.2], [0.35, 0.05]].forEach(function (j, i) {
+      var jar = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.16, 8), jarMat); jar.position.set(j[0], 0.66, j[1]); cg.add(jar);
+      cyl(0.008, 0.008, 0.3, 3, 0x4a7a3a, j[0], 0.78, j[1], cg).castShadow = false;
+      sph(0.06, i % 2 ? 0x6fb86a : 0x8f4fb0, j[0] + 0.03, 0.9, j[1], cg, 0, 1.4, 0.4, 0.8); sph(0.05, i % 2 ? 0x5fa85a : 0x7a3fa0, j[0] - 0.04, 0.84, j[1] + 0.02, cg, 0, 1.4, 0.4, 0.8);
+    });
+    [[0.95, -0.25], [0.15, 0.25]].forEach(function (pp) { cyl(0.07, 0.05, 0.1, 7, 0xd98c6a, pp[0], 0.63, pp[1], cg); sph(0.08, 0x62bf78, pp[0], 0.72, pp[1], cg, 0); });
+    var terr = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 8), jarMat); terr.position.set(-0.8, 0.76, -0.1); cg.add(terr);
+    sph(0.1, 0x5fa85a, -0.8, 0.68, -0.1, cg, 0, 1.2, 0.6, 1); cyl(0.03, 0.03, 0.06, 6, 0xe8f6ff, -0.8, 0.95, -0.1, cg);
+    sph(0.09, 0x9a9aa2, -0.35, 0.62, 0.2, cg, 0, 1.3, 0.45, 1); sph(0.08, 0xf2b8a8, -0.15, 0.62, 0.2, cg, 0, 1.3, 0.45, 1);
+    var note = plane(0.36, 0.22, texSign('Free cuttings!', 256, 156, '#fbf8f1', '#3a3330', 30), 0.6, 0.64, 0.3, cg); note.rotation.x = -Math.PI / 2 + 0.25;
+  })();
+
+  // postcards to pick up: tap one and it floats up close with a way to say hi
+  var POSTCARDS = { meshes: [], designs: [] };
+  (function postcardStand() {
+    var pg = new THREE.Group(); pg.position.set(-2.7, 0, 3.0); pg.rotation.y = Math.PI / 2 - 0.35; DECOR.add(pg);
+    box(1.1, 0.05, 0.5, 0xc9a47a, 0, 0.7, 0, pg);
+    [[-0.5, -0.2], [0.5, -0.2], [-0.5, 0.2], [0.5, 0.2]].forEach(function (l) { box(0.06, 0.7, 0.06, 0xb08a62, l[0], 0.35, l[1], pg); });
+    var designs = [
+      { bg: ['#2a1050', '#6a2f8e', '#e0809a'], title: 'Greetings from', big: 'the floating island', ink: '#fff4e8', art: 'island' },
+      { bg: ['#ffe3ea', '#f9c4d2', '#f6b3c6'], title: 'Say hi to', big: 'the mochi house', ink: '#5a2a3a', art: 'mochi' },
+      { bg: ['#cfeede', '#a8dcc0', '#7fc6a0'], title: 'Wish you were', big: 'here with the frog', ink: '#1f3d2e', art: 'frog' },
+      { bg: ['#fff1d6', '#f6dcae', '#e8c088'], title: 'Hello from', big: 'the cactus forest', ink: '#4a3220', art: 'cactus' },
+      { bg: ['#1c2a44', '#2f4f7a', '#5f86b0'], title: 'Greetings from', big: 'the black-sand beach', ink: '#f4f0e6', art: 'crab' }
+    ];
+    designs.forEach(function (d, i) {
+      var tex = ctex(512, 340, function (x, w, h) {
+        var gr = x.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, d.bg[0]); gr.addColorStop(0.55, d.bg[1]); gr.addColorStop(1, d.bg[2]); x.fillStyle = gr; x.fillRect(0, 0, w, h);
+        x.strokeStyle = 'rgba(255,255,255,0.85)'; x.lineWidth = 10; x.strokeRect(12, 12, w - 24, h - 24);
+        if (d.art === 'island') { x.fillStyle = '#e0ac6e'; x.beginPath(); x.moveTo(150, 205); x.lineTo(362, 205); x.lineTo(300, 260); x.lineTo(256, 300); x.lineTo(212, 260); x.closePath(); x.fill(); x.fillStyle = '#9bd48b'; x.beginPath(); x.ellipse(256, 200, 110, 24, 0, 0, 7); x.fill(); x.fillStyle = 'rgba(223,243,255,0.7)'; x.beginPath(); x.arc(290, 196, 36, Math.PI, 0); x.fill(); x.fillStyle = '#4c9c66'; x.fillRect(196, 150, 14, 46); }
+        if (d.art === 'mochi') { x.fillStyle = '#fbe9ee'; x.beginPath(); x.ellipse(256, 290, 120, 18, 0, 0, 7); x.fill(); x.fillStyle = '#f6a9bf'; x.beginPath(); x.moveTo(160, 288); x.lineTo(352, 288); x.lineTo(286, 168); x.lineTo(226, 168); x.closePath(); x.fill(); x.fillStyle = '#7f8c3c'; x.beginPath(); x.ellipse(330, 250, 30, 60, 0.5, 0, 7); x.fill(); }
+        if (d.art === 'frog') { x.fillStyle = '#4aa863'; x.beginPath(); x.ellipse(256, 280, 110, 22, 0, 0, 7); x.fill(); x.fillStyle = '#7fd08a'; x.beginPath(); x.ellipse(256, 245, 64, 42, 0, 0, 7); x.fill(); x.fillStyle = '#fff'; [226, 286].forEach(function (ex) { x.beginPath(); x.arc(ex, 205, 16, 0, 7); x.fill(); }); x.fillStyle = '#2a2338'; [226, 286].forEach(function (ex) { x.beginPath(); x.arc(ex, 207, 7, 0, 7); x.fill(); }); }
+        if (d.art === 'cactus') { x.fillStyle = '#e8c088'; x.beginPath(); x.ellipse(256, 292, 140, 18, 0, 0, 7); x.fill(); x.fillStyle = '#4c9c66'; x.beginPath(); x.roundRect ? x.roundRect(232, 150, 48, 142, 24) : x.rect(232, 150, 48, 142); x.fill(); x.beginPath(); x.roundRect ? x.roundRect(186, 196, 30, 66, 15) : x.rect(186, 196, 30, 66); x.fill(); x.fillRect(200, 248, 40, 18); x.beginPath(); x.roundRect ? x.roundRect(296, 176, 28, 58, 14) : x.rect(296, 176, 28, 58); x.fill(); x.fillRect(272, 222, 38, 16); }
+        if (d.art === 'crab') { x.fillStyle = '#2a2930'; x.fillRect(24, 262, 464, 64); x.fillStyle = '#ff6a45'; x.beginPath(); x.ellipse(256, 248, 56, 32, 0, 0, 7); x.fill(); [-1, 1].forEach(function (sd) { x.beginPath(); x.arc(256 + sd * 78, 216, 18, 0, 7); x.fill(); x.fillRect(256 + sd * 44 - 4, 222, 8, 24); }); x.fillStyle = '#fff'; [240, 272].forEach(function (ex) { x.beginPath(); x.arc(ex, 214, 8, 0, 7); x.fill(); }); x.fillStyle = '#2a2338'; [240, 272].forEach(function (ex) { x.beginPath(); x.arc(ex, 215, 4, 0, 7); x.fill(); }); }
+        x.fillStyle = d.ink; x.textAlign = 'center';
+        x.font = '500 26px "DM Sans", sans-serif'; x.fillText(d.title, w / 2, 62);
+        x.font = '800 40px "Bricolage Grotesque", sans-serif'; x.fillText(d.big, w / 2, 108);
+      });
+      // laid flat on the table in a loose stack of five, each one a little off from the one below
+      var lay = [[-0.05, 0.03, -0.25], [0.09, -0.04, 0.18], [-0.11, -0.02, 0.42], [0.04, 0.06, -0.08], [0.0, -0.01, 0.06]][i];
+      var card = plane(0.42, 0.28, tex, lay[0], 0.729 + i * 0.005, lay[1], pg); card.rotation.set(-Math.PI / 2, 0, lay[2]);
+      card.userData.pc = i; POSTCARDS.meshes.push(card); POSTCARDS.designs.push(tex);
     });
   })();
 
   (function interiorPlants() {
     function ok(x, z) {
       if (Math.hypot(x - GX, z - GZ) > 5.1) return false;
-      if (x > -1.6 && x < 2.4 && z > -2.3 && z < -0.4) return false;
-      if (x > 1.7 && x < 6.2 && z > -2.8 && z < 1.3) return false;
-      if (x > 4.6 && x < 6.1 && z > 1.0 && z < 3.0) return false;
-      if (x > -2.2 && x < 0.2 && z > 1.7 && z < 3.1) return false;
-      if (Math.hypot(x - 0.8, z - 0.4) < 0.9) return false;
-      if (Math.hypot(x + 1.0, z - 1.2) < 1.0) return false;
-      if (x > -2.7 && x < 0.9 && z > 1.2 && z < 5.4) return false; // keep the view in front of the frog clear
-      if ([[-1.8, 3.0], [1.9, 4.0], [4.6, 3.8]].some(function (t) { return Math.hypot(x - t[0], z - t[1]) < 1.3; })) return false;
+      if (x > 1.7 && x < 6.2 && z > -2.8 && z < 1.3) return false;             // loft
+      if (x > 4.6 && x < 6.1 && z > 1.0 && z < 3.0) return false;             // its stair
+      if (x > -1.2 && x < 4.2 && z > 1.4 && z < 4.7) return false;            // counter deck
+      if (Math.hypot(x - 0.8, z - 0.4) < 0.9) return false;                     // ice bars
+      if (x > -3.4 && x < 0.6 && z > 3.8 && z < 7.6) return false;             // frog and the view to it
+      if (x > -3.8 && x < 0.8 && z > -1.2 && z < 4.6) return false;            // nothing green behind the frog
+      if (x > -3.6 && x < -1.2 && z > 0.2 && z < 3.8) return false;            // plant cuttings and postcards
+      if ([[0.4, -0.6], [2.4, 6.0], [4.6, 3.8]].some(function (t) { return Math.hypot(x - t[0], z - t[1]) < 1.3; })) return false;
       return true;
     }
     var n = 0, tries = 0, types = ['monstera', 'pot', 'bush'];
-    while (n < 5 && tries < 400) {
+    while (n < 0 && tries < 400) { // no loose bushes or potted plants scattered on the floor
       tries++;
       var a = R() * 6.28, d = 1.6 + R() * 2.7, x = GX + Math.cos(a) * d, z = GZ + Math.sin(a) * d;
       if (!ok(x, z)) continue;
       var t = types[Math.floor(R() * types.length)];
-      if (t === 'palm') palm(GH, x, z, 0.9 + R() * 0.5);
-      else if (t === 'monstera') monstera(GH, x, z, 0.9 + R() * 0.5);
-      else if (t === 'tree') leafTree(GH, x, z, 0.65 + R() * 0.35);
-      else if (t === 'pot') { cyl(0.22, 0.17, 0.32, 7, 0xd98c6a, x, 0.16, z, GH); bush(GH, x, 0.32, z, 0.8, 0x62bf78); }
-      else bush(GH, x, 0.05, z, 1 + R() * 0.5, 0x5fbf74);
+      if (t === 'palm') palm(DECOR, x, z, 0.9 + R() * 0.5);
+      else if (t === 'monstera') monstera(DECOR, x, z, 0.9 + R() * 0.5);
+      else if (t === 'tree') leafTree(DECOR, x, z, 0.65 + R() * 0.35);
+      else if (t === 'pot') { cyl(0.22, 0.17, 0.32, 7, 0xd98c6a, x, 0.16, z, DECOR); bush(DECOR, x, 0.32, z, 0.8, 0x62bf78); }
+      else bush(DECOR, x, 0.05, z, 1 + R() * 0.5, 0x5fbf74);
       n++;
     }
-    monstera(GH, -1.0, 1.2, 1.5);
+    monstera(GH, 0.8, 0.4, 1.5);
     function tallTree(x, z, H, cols) {
       var g = new THREE.Group(); g.position.set(x, 0, z); GH.add(g);
       cyl(0.12, 0.2, 1.0, 6, 0x8a5a3c, 0, 0.5, 0, g);
@@ -979,7 +1101,7 @@
     var wood = 0xb98558, FL = 1.4; // upstairs floor height
     var loft = new THREE.Group(); GH.add(loft); loftGroup = loft;
     // open loft deck on posts, no walls and no roof
-    box(3.8, 0.12, 3.4, 0xd8b48a, 3.9, FL - 0.06, -0.7, loft);
+    box(3.8, 0.12, 3.4, 0xd8b48a, 3.9, FL - 0.06, -0.7, loft).userData.noFade = true;
     [[2.05, -2.35], [5.75, -2.35], [2.05, 0.95], [5.75, 0.95], [3.9, 0.95], [3.9, -2.35]].forEach(function (q) { cyl(0.07, 0.07, FL, 6, 0x8a5a3c, q[0], FL / 2, q[1], loft); });
     function railRun(x1, z1, x2, z2) {
       var len = Math.hypot(x2 - x1, z2 - z1), rl = box(0.05, 0.05, len, 0x8a5a3c, (x1 + x2) / 2, FL + 0.5, (z1 + z2) / 2, loft); rl.rotation.y = Math.atan2(x2 - x1, z2 - z1);
@@ -995,14 +1117,15 @@
     });
     strut(new THREE.Vector3(sx + 0.28, 0.85, 1.0 + stepN * run), new THREE.Vector3(sx + 0.28, FL + 0.55, 1.0), 0.02, 0x8a5a3c, loft);
     cyl(0.02, 0.02, 0.85, 4, 0x8a5a3c, sx + 0.28, 0.425, 1.0 + stepN * run, loft);
-    box(1.9, 0.02, 1.5, 0xf3b8c8, 3.7, FL + 0.01, 0.0, GH); // rug
+    box(1.9, 0.02, 1.5, 0x8fc49a, 3.7, FL + 0.025, 0.0, GH); // rug
+    var barLight = new THREE.PointLight(0xffe2b8, 0.6, 5, 2); barLight.position.set(1.2, 2.2, 3.4); GH.add(barLight);
 
-    // bed + cat
+    // bed + cat: the bed runs front to back at the back left of the loft; the cat curls near the edge of the futon
     box(0.95, 0.25, 1.5, 0x8a5a3c, 2.7, FL + 0.13, -1.5, GH);
     box(0.88, 0.16, 1.42, 0xf4e9ff, 2.7, FL + 0.31, -1.5, GH);
     box(0.9, 0.1, 0.8, 0x8f86e8, 2.7, FL + 0.42, -1.2, GH);
     box(0.55, 0.1, 0.28, 0xffffff, 2.7, FL + 0.45, -2.05, GH);
-    var cat = new THREE.Group(); cat.position.set(2.7, FL + 0.57, -1.35); GH.add(cat); cabinParts.cat = cat;
+    var cat = new THREE.Group(); cat.position.set(2.98, FL + 0.57, -1.3); GH.add(cat); cabinParts.cat = cat;
     sph(0.2, 0xf6c27a, 0, 0.03, 0, cat, 1, 1, 0.7, 1.5); sph(0.14, 0xf6c27a, 0, 0.05, 0.3, cat, 1);
     cone(0.05, 0.1, 4, 0xf6c27a, -0.07, 0.19, 0.3, cat); cone(0.05, 0.1, 4, 0xf6c27a, 0.07, 0.19, 0.3, cat);
     var tail = cyl(0.03, 0.03, 0.35, 5, 0xf6c27a, 0.18, 0.02, -0.28, cat); tail.rotation.x = Math.PI / 2; tail.rotation.z = 0.6;
@@ -1010,27 +1133,33 @@
     var z = new THREE.Sprite(new THREE.SpriteMaterial({ map: texZ(), transparent: true, depthWrite: false })); z.scale.set(0.5, 0.25, 1); z.position.set(0.2, 0.5, 0.3); cat.add(z);
     anims.push(function (t) { cat.scale.y = 1 + Math.sin(t * 1.8) * 0.05; z.position.y = 0.4 + ((t * 0.3) % 1) * 0.35; z.material.opacity = 1 - ((t * 0.3) % 1); });
 
-    // desk
-    box(1.15, 0.06, 0.55, 0xe8c898, 4.3, FL + 0.74, -1.95, GH);
-    [[-0.5, -0.2], [0.5, -0.2], [-0.5, 0.2], [0.5, 0.2]].forEach(function (l) { cyl(0.03, 0.03, 0.72, 4, 0x6b5a4e, 4.3 + l[0], FL + 0.37, -1.95 + l[1], GH); });
-    box(0.55, 0.36, 0.05, 0x2f2a3a, 4.3, FL + 1.07, -2.1, GH); box(0.07, 0.15, 0.07, 0x2f2a3a, 4.3, FL + 0.85, -2.1, GH);
-    plane(0.5, 0.31, texApp(), 4.3, FL + 1.07, -2.072, GH);
-    sph(0.1, 0xd98c6a, 3.85, FL + 0.86, -2.1, GH, 0); sph(0.12, 0x62bf78, 3.85, FL + 0.98, -2.1, GH, 0);
-    var chair = new THREE.Group(); chair.position.set(4.3, FL, -1.3); GH.add(chair);
+    // desk, moved up to the front right of the loft
+    box(1.15, 0.06, 0.55, 0xe8c898, 4.9, FL + 0.74, 0.1, GH);
+    [[-0.5, -0.2], [0.5, -0.2], [-0.5, 0.2], [0.5, 0.2]].forEach(function (l) { cyl(0.03, 0.03, 0.72, 4, 0x6b5a4e, 4.9 + l[0], FL + 0.37, 0.1 + l[1], GH); });
+    box(0.55, 0.36, 0.05, 0x2f2a3a, 4.9, FL + 1.07, -0.05, GH); box(0.07, 0.15, 0.07, 0x2f2a3a, 4.9, FL + 0.85, -0.05, GH);
+    plane(0.5, 0.31, texApp(), 4.9, FL + 1.07, -0.022, GH);
+    sph(0.1, 0xd98c6a, 4.45, FL + 0.86, -0.05, GH, 0); sph(0.12, 0x62bf78, 4.45, FL + 0.98, -0.05, GH, 0);
+    var chair = new THREE.Group(); chair.position.set(4.9, FL, 0.75); GH.add(chair);
     box(0.4, 0.05, 0.4, 0x9d90e0, 0, 0.45, 0, chair); box(0.4, 0.4, 0.05, 0x9d90e0, 0, 0.7, 0.18, chair); cyl(0.03, 0.03, 0.45, 4, 0x6b5a4e, 0, 0.22, 0, chair);
 
     // handheld console
-    var hh = new THREE.Group(); hh.position.set(4.62, FL + 0.8, -1.78); hh.rotation.set(-0.35, -0.2, 0); GH.add(hh); cabinParts.console = hh;
+    var hh = new THREE.Group(); hh.position.set(5.22, FL + 0.8, 0.27); hh.rotation.set(-0.35, -0.2, 0); GH.add(hh); cabinParts.console = hh;
     box(0.34, 0.04, 0.2, 0xff7a9a, 0, 0, 0, hh); plane(0.14, 0.1, texHandheld(), 0, 0.025, 0, hh).rotation.x = -Math.PI / 2;
     cyl(0.018, 0.018, 0.012, 6, 0x2f2a3a, -0.12, 0.025, 0.02, hh); cyl(0.014, 0.014, 0.012, 6, 0xffd36b, 0.11, 0.025, 0.0, hh); cyl(0.014, 0.014, 0.012, 6, 0x6cc4a8, 0.14, 0.025, 0.03, hh);
 
     // easel with character painting
-    var e = new THREE.Group(); e.position.set(5.15, FL, 0.25); GH.add(e); cabinParts.easel = e;
-    [[-0.28, 0.1], [0.28, 0.1], [0, -0.28]].forEach(function (l, i) {
-      var leg = cyl(0.025, 0.025, 1.4, 5, 0x8a5a3c, l[0], 0.68, l[1] * 0.6, e); leg.rotation.z = (i === 0 ? -1 : i === 1 ? 1 : 0) * 0.13; leg.rotation.x = i === 2 ? -0.2 : 0.06;
-    });
-    var canv = new THREE.Group(); canv.position.set(0, 1.0, 0.0); canv.rotation.x = -0.1; e.add(canv);
+    var e = new THREE.Group(); e.position.set(4.1, FL, -1.3); GH.add(e); cabinParts.easel = e;
+    // a proper A-frame easel: two front legs leaning back to meet at the top, a back leg propping it up,
+    // a ledge the canvas stands on, and a clamp holding its top, so the canvas leans back at a slope
+    var V3e = THREE.Vector3, ewood = 0x8a5a3c, slope = Math.atan2(0.3, 1.6);
+    strut(new V3e(-0.32, 0, 0.12), new V3e(-0.02, 1.6, -0.18), 0.024, ewood, e); strut(new V3e(0.32, 0, 0.12), new V3e(0.02, 1.6, -0.18), 0.024, ewood, e);
+    strut(new V3e(0, 0, -0.6), new V3e(0, 1.52, -0.19), 0.022, ewood, e);
+    strut(new V3e(-0.14, 1.2, -0.105), new V3e(0.14, 1.2, -0.105), 0.016, ewood, e);
+    var ledge = box(0.72, 0.035, 0.09, ewood, 0, 0.55, 0.06, e); ledge.rotation.x = -slope;
+    box(0.72, 0.05, 0.015, ewood, 0, 0.585, 0.1, e).rotation.x = -slope;
+    var canv = new THREE.Group(); canv.position.set(0, 0.57 + 0.39 * Math.cos(slope), 0.12 - 0.1875 * 0.95 + 0.045); canv.rotation.x = -slope; e.add(canv);
     box(0.6, 0.78, 0.04, 0xf3ede2, 0, 0, 0, canv); plane(0.52, 0.7, texCharacter(), 0, 0, 0.025, canv);
+    box(0.14, 0.05, 0.09, ewood, 0, 0.4, 0, canv);
     cyl(0.05, 0.05, 0.1, 6, 0x6aa9c9, 0.4, 0.05, 0.25, e);
   })();
 
@@ -1038,7 +1167,7 @@
   /* Frog, mango + pudding                                               */
   /* ------------------------------------------------------------------ */
   function buildFrog() {
-    var g = new THREE.Group(); g.position.set(-1.0, 0.82, 1.2); GH.add(g);
+    var g = new THREE.Group(); g.position.set(0.8, 0.82, 0.4); GH.add(g);
     cyl(0.5, 0.45, 0.04, 7, 0x4aa863, 0, 0, 0, g);
     var frog = new THREE.Group(); frog.position.y = 0.2; g.add(frog);
     var gm = function (c) { return new THREE.MeshStandardMaterial({ color: c, transparent: true, opacity: 0.72, roughness: 0.15, flatShading: true, emissive: 0x2a8f6a, emissiveIntensity: 0.25 }); };
@@ -1065,7 +1194,7 @@
     return g;
   }
   function buildMango() {
-    var g = new THREE.Group(); g.position.set(0.5, 0.98, -1.3); GH.add(g);
+    var g = new THREE.Group(); g.position.set(1.0, 0.98, 3.6); GH.add(g);
     var mango = new THREE.Group(); mango.position.set(-0.35, 0.16, 0); g.add(mango);
     sph(0.15, 0xffb03a, 0, 0, 0, mango, 1, 1, 1.15, 0.85); sph(0.1, 0xf26a4b, 0.06, -0.03, 0.06, mango, 0, 1, 1.1, 0.8);
     cone(0.04, 0.14, 4, 0x4aa863, 0.04, 0.2, 0, mango).rotation.z = -0.6;
@@ -1379,9 +1508,12 @@
     add(new THREE.Mesh(basinGeo, M(0xe0ac6e)), PC.x, PY - 0.8, PC.z, world);
     var tipGeo = new THREE.ConeGeometry(1.7, 2.6, 7); tipGeo.rotateX(Math.PI);
     add(new THREE.Mesh(tipGeo, M(0xc98a4f)), PC.x, PY - 2.75, PC.z, world);
-    var rimM = new THREE.Mesh(new THREE.RingGeometry(3.0, 3.52, 10), M(0x6fcf4f)); rimM.rotation.x = -Math.PI / 2; rimM.position.set(PC.x, PY - 0.01, PC.z); world.add(rimM);
-    var poolW = new THREE.Mesh(new THREE.CircleGeometry(3.05, 10), new THREE.MeshStandardMaterial({ color: 0x3fe6ff, emissive: 0x13a8d8, emissiveIntensity: 0.5, flatShading: true, roughness: 0.1, transparent: true, opacity: 0.88 }));
-    poolW.rotation.x = -Math.PI / 2; poolW.position.set(PC.x, PY - 0.025, PC.z); world.add(poolW);
+    // the floating pool is filled right up to its brim
+    var rimM = new THREE.Mesh(new THREE.RingGeometry(3.42, 3.56, 20), M(0x6fcf4f)); rimM.rotation.x = -Math.PI / 2; rimM.position.set(PC.x, PY + 0.035, PC.z); world.add(rimM);
+    var poolMat = new THREE.MeshStandardMaterial({ color: 0x3fe6ff, emissive: 0x13a8d8, emissiveIntensity: 0.5, flatShading: true, roughness: 0.1, transparent: true, opacity: 0.88, side: THREE.DoubleSide });
+    var poolW = new THREE.Mesh(new THREE.CircleGeometry(3.45, 20), poolMat);
+    var poolSide = new THREE.Mesh(new THREE.CylinderGeometry(3.46, 3.46, 0.16, 20, 1, true), poolMat); poolSide.position.set(PC.x, PY - 0.05, PC.z); world.add(poolSide);
+    poolW.rotation.x = -Math.PI / 2; poolW.position.set(PC.x, PY + 0.03, PC.z); world.add(poolW);
     // soft foam gathering where the water lands
     var foamMat2 = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, transparent: true, opacity: 0.8, flatShading: true });
     var foams = [];
@@ -1393,7 +1525,7 @@
     for (var frg = 0; frg < 3; frg++) {
       var rm = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.75, 14), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
       var rphi = PHI_L + (frg - 1) * PSI * 0.6;
-      rm.rotation.x = -Math.PI / 2; rm.position.set(Math.cos(rphi) * PD, PY + 0.005, Math.sin(rphi) * PD); world.add(rm); foamRings.push({ m: rm, ph: frg * 0.33 });
+      rm.rotation.x = -Math.PI / 2; rm.position.set(Math.cos(rphi) * PD, PY + 0.045, Math.sin(rphi) * PD); world.add(rm); foamRings.push({ m: rm, ph: frg * 0.33 });
     }
     // mist hanging around the splash zone
     var mistTex = ctex(64, 64, function (x, w, h) { var gr = x.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gr; x.fillRect(0, 0, w, h); });
@@ -1574,16 +1706,15 @@
     HS[id] = { id: id, stop: stop, group: group, pos: pos, off: new THREE.Vector3(off[0], off[1], off[2]), spr: spr, hover: 0, base: spr.position.y, ph: Math.random() * 6 };
   }
   register('graveyard', 1, buildGraveyard(), 1.2, [0.6, 1.9, 2.8], 0.8);
-  if (domeShell) fadeable(domeShell); if (loftGroup) fadeable(loftGroup); FADE_LATER.forEach(fadeable);
+  if (loftGroup) fadeable(loftGroup); FADE_LATER.forEach(fadeable); fadeable(DECOR); // the dome's frame and glass always stay as they are
   register('landscape', 2, buildEasel(), 0.9, [0.7, 0.4, 3.0], 1.3);
   register('ted', 3, barnHS.tv, 0.7, [-1.6, 0.8, 2.4], 1.5);
   register('teddy', 3, barnHS.ted, 0.6, [-1.5, 0.7, 2.2], 1.1);
-  register('mango', 4, buildMango(), 0.6, [0.2, 0.5, 2.2], 0.5);
+  register('mango', 4, buildMango(), 0.6, [0.3, 0.6, 1.9], 0.5);
   register('frog', 4, buildFrog(), 0.6, [0.5, 0.5, 1.9], 0.7);
   register('sleepypaws', 5, cabinParts.cat, 0.6, [0.9, 0.9, 2.4], 0.6);
-  register('concept', 5, cabinParts.easel, 0.7, [-0.4, 0.5, 2.4], 1.3);
+  register('concept', 5, cabinParts.easel, 0.7, [-0.3, 1.1, 2.3], 1.3);
   register('gameui', 5, cabinParts.console, 0.4, [0.1, 0.8, 1.5], 0.45);
-  register('experimental', 4, buildExperimental(), 0.7, [0.3, 0.7, 2.4], 1.6);
   register('contact', 6, cabinParts.sign, 0.6, [0.2, 0.7, 2.3], 1.1);
 
   /* ------------------------------------------------------------------ */
@@ -1627,26 +1758,99 @@
   /* Pointer interaction                                                 */
   /* ------------------------------------------------------------------ */
   var ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), mouse = { x: 0, y: 0 };
+  // the floating postcard view
+  var pcWrap = document.getElementById('postcard'), pcCard = document.getElementById('pcCard'), pcFront = document.getElementById('pcFront'), pcOpenIdx = -1, pcLastFocus = null;
+  function openPostcard(i, cx, cy) {
+    pcOpenIdx = i; pcLastFocus = document.activeElement;
+    POSTCARDS.meshes[i].visible = false;
+    pcFront.style.backgroundImage = 'url(' + POSTCARDS.designs[i].image.toDataURL() + ')';
+    pcCard.classList.remove('flipped');
+    pcWrap.style.setProperty('--ox', (cx || window.innerWidth / 2) + 'px'); pcWrap.style.setProperty('--oy', (cy || window.innerHeight / 2) + 'px');
+    pcWrap.hidden = false; requestAnimationFrame(function () { pcWrap.classList.add('on'); });
+    document.getElementById('pcFlip').focus();
+  }
+  function closePostcard() {
+    if (pcOpenIdx < 0) return;
+    pcWrap.classList.remove('on'); var idx = pcOpenIdx; pcOpenIdx = -1;
+    setTimeout(function () { pcWrap.hidden = true; POSTCARDS.meshes[idx].visible = true; }, 380);
+    if (pcLastFocus && pcLastFocus.focus) pcLastFocus.focus();
+  }
+  document.getElementById('pcFlip').addEventListener('click', function () { pcCard.classList.toggle('flipped'); });
+  document.getElementById('pcClose').addEventListener('click', closePostcard);
+  pcWrap.addEventListener('click', function (e) { if (e.target === pcWrap) closePostcard(); });
+  pcCard.addEventListener('click', function (e) { if (!e.target.closest('a,button')) pcCard.classList.toggle('flipped'); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePostcard(); });
   function pick(e) {
     var r = canvas.getBoundingClientRect();
     ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
-    var hits = ray.intersectObjects(CRAB.hit ? hitList.concat([CRAB.hit]) : hitList, false);
+    var hits = ray.intersectObjects(hitList.concat(CRAB.hit ? [CRAB.hit] : [], POSTCARDS.meshes), false);
     if (!hits.length) return null;
-    return hits[0].object === CRAB.hit ? 'crab' : hits[0].object.userData.hs;
+    var o = hits[0].object;
+    return o === CRAB.hit ? 'crab' : o.userData.pc !== undefined ? 'pc:' + o.userData.pc : o.userData.hs;
   }
   canvas.addEventListener('pointermove', function (e) {
     mouse.x = (e.clientX / window.innerWidth) * 2 - 1; mouse.y = (e.clientY / window.innerHeight) * 2 - 1;
     if (e.pointerType === 'touch') return;
-    var id = pick(e); hovered = id === 'crab' ? null : id;
+    var id = pick(e); hovered = id === 'crab' || (id && id.indexOf('pc:') === 0) ? null : id;
     canvas.style.cursor = id ? 'pointer' : 'default';
-    if (id) { tip.textContent = id === 'crab' ? 'Poke the crab' : id === 'contact' ? 'Say hi' : PROJECTS[id].title; tip.style.left = e.clientX + 'px'; tip.style.top = e.clientY + 'px'; tip.classList.add('on'); }
+    if (id) { tip.textContent = id === 'crab' ? 'Poke the crab' : id.indexOf('pc:') === 0 ? 'Pick up a postcard' : id === 'contact' ? 'Say hi' : PROJECTS[id].title; tip.style.left = e.clientX + 'px'; tip.style.top = e.clientY + 'px'; tip.classList.add('on'); }
     else tip.classList.remove('on');
   });
   canvas.addEventListener('pointerleave', function () { hovered = null; tip.classList.remove('on'); });
+  // free look camera
+  var FREE = { on: false, T: new THREE.Vector3(), r: 20, th: 0, ph: 1, drag: null, moved: 0, keys: {}, pts: {} };
+  var freeBtn = document.getElementById('freeBtn'), freeHelp = document.getElementById('freeHelp');
+  function setFree(on) {
+    FREE.on = on; document.body.classList.toggle('free', on); freeBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    freeBtn.textContent = on ? 'Back to the tour' : 'Explore freely'; freeHelp.hidden = !on;
+    document.documentElement.style.overflow = on ? 'hidden' : ''; canvas.style.touchAction = on ? 'none' : '';
+    if (on) {
+      if (focusId) closePanel();
+      FREE.T.copy(vL); var off = new THREE.Vector3().subVectors(vP, vL);
+      FREE.r = off.length(); FREE.th = Math.atan2(off.x, off.z); FREE.ph = Math.acos(clamp(off.y / FREE.r, -1, 1));
+    }
+  }
+  freeBtn.addEventListener('click', function () { setFree(!FREE.on); });
+  function freePan(dx, dy) {
+    var fwd = new THREE.Vector3().subVectors(FREE.T, camera.position).normalize(), right = new THREE.Vector3().crossVectors(fwd, UP).normalize(), up = new THREE.Vector3().crossVectors(right, fwd);
+    FREE.T.addScaledVector(right, -dx * FREE.r * 0.0016).addScaledVector(up, dy * FREE.r * 0.0016);
+  }
+  canvas.addEventListener('contextmenu', function (e) { if (FREE.on) e.preventDefault(); });
+  canvas.addEventListener('pointerdown', function (e) {
+    if (!FREE.on) return;
+    canvas.setPointerCapture(e.pointerId); FREE.pts[e.pointerId] = [e.clientX, e.clientY]; FREE.moved = 0;
+    FREE.drag = { pan: e.button === 2 || e.shiftKey, x: e.clientX, y: e.clientY };
+  });
+  canvas.addEventListener('pointermove', function (e) {
+    if (!FREE.on || !FREE.pts[e.pointerId]) return;
+    var ids = Object.keys(FREE.pts), prev = FREE.pts[e.pointerId]; FREE.pts[e.pointerId] = [e.clientX, e.clientY];
+    var dx = e.clientX - prev[0], dy = e.clientY - prev[1]; FREE.moved += Math.abs(dx) + Math.abs(dy);
+    if (ids.length >= 2) {
+      var a = FREE.pts[ids[0]], b = FREE.pts[ids[1]], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      if (FREE.pinch) FREE.r = clamp(FREE.r * FREE.pinch / d, 0.6, 70); FREE.pinch = d; freePan(dx / 2, dy / 2); return;
+    }
+    if (FREE.drag && FREE.drag.pan) freePan(dx, dy);
+    else { FREE.th -= dx * 0.006; FREE.ph = clamp(FREE.ph - dy * 0.006, 0.03, Math.PI - 0.03); }
+  });
+  function freeUp(e) { delete FREE.pts[e.pointerId]; FREE.pinch = null; if (!Object.keys(FREE.pts).length) FREE.drag = null; }
+  canvas.addEventListener('pointerup', freeUp); canvas.addEventListener('pointercancel', freeUp);
+  window.addEventListener('wheel', function (e) { if (!FREE.on) return; e.preventDefault(); FREE.r = clamp(FREE.r * Math.exp(e.deltaY * 0.0012), 0.6, 70); }, { passive: false });
+  document.addEventListener('keydown', function (e) { if (FREE.on && !/INPUT|TEXTAREA/.test(e.target.tagName)) { FREE.keys[e.key.toLowerCase()] = true; if (/^arrow/.test(e.key.toLowerCase())) e.preventDefault(); } });
+  document.addEventListener('keyup', function (e) { FREE.keys[e.key.toLowerCase()] = false; });
+  function freeStep(dt) {
+    var k = FREE.keys, sp = Math.max(2, FREE.r * 0.7) * dt, fwd = new THREE.Vector3(-Math.sin(FREE.th), 0, -Math.cos(FREE.th)), right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+    if (k.w || k.arrowup) FREE.T.addScaledVector(fwd, sp); if (k.s || k.arrowdown) FREE.T.addScaledVector(fwd, -sp);
+    if (k.d || k.arrowright) FREE.T.addScaledVector(right, sp); if (k.a || k.arrowleft) FREE.T.addScaledVector(right, -sp);
+    if (k.e) FREE.T.y += sp; if (k.q) FREE.T.y -= sp;
+    vL.copy(FREE.T); vP.set(FREE.T.x + FREE.r * Math.sin(FREE.ph) * Math.sin(FREE.th), FREE.T.y + FREE.r * Math.cos(FREE.ph), FREE.T.z + FREE.r * Math.sin(FREE.ph) * Math.cos(FREE.th));
+  }
+
   canvas.addEventListener('click', function (e) {
+    if (FREE.on && FREE.moved > 6) return;
     var id = pick(e);
     if (id === 'crab') { if (CRAB.poke) CRAB.poke(); }
+    else if (id && id.indexOf('pc:') === 0) openPostcard(+id.slice(3), e.clientX, e.clientY);
     else if (id) openPanel(id);
   });
 
@@ -1660,13 +1864,13 @@
   function frame() {
     requestAnimationFrame(frame);
     var dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
-    var target = clamp(window.scrollY / maxScroll, 0, 1);
+    var target = FREE.on ? cur : clamp(window.scrollY / maxScroll, 0, 1);
     cur += (target - cur) * (1 - Math.exp(-dt * (reduce ? 14 : 4.5)));
 
     var u = cur * (N - 1), i = Math.min(N - 2, Math.floor(u)), s = u - i;
     var tt = (i + smooth((s - 0.2) / 0.6)) / (N - 1);
     posCurve.getPoint(tt, vP); lookCurve.getPoint(tt, vL);
-    if (!reduce) { vP.x += mouse.x * 0.35; vP.y -= mouse.y * 0.2; }
+    if (!reduce && !FREE.on) { vP.x += mouse.x * 0.35; vP.y -= mouse.y * 0.2; }
 
     focusBlend += ((focusId ? 1 : 0) - focusBlend) * (1 - Math.exp(-dt * 4));
     if (focusBlend < 0.003 && !focusId) { focusBlend = 0; }
@@ -1679,12 +1883,14 @@
       var b = smooth(focusBlend);
       vP.lerp(fP, b); vL.lerp(fL, b);
     }
-    applyView(0.17 * clamp((aspect - 0.9) / 0.5, 0, 1) * (1 - smooth(u / 0.9)) * (1 - focusBlend));
+    if (FREE.on) freeStep(dt);
+    applyView(FREE.on ? 0 : 0.17 * clamp((aspect - 0.9) / 0.5, 0, 1) * (1 - smooth(u / 0.9)) * (1 - focusBlend));
     camera.position.copy(vP); camera.lookAt(vL);
-    var dimW = Math.max(smooth(u / 0.8), focusBlend);
+    var dimW = FREE.on ? 0.25 : Math.max(smooth(u / 0.8), focusBlend);
     focusSpot.position.set(vL.x + 1.5, vL.y + 7, vL.z + 3); focusSpot.target.position.copy(vL);
     updateEnvironment(t, dt, dimW);
-    updateFaders(dt, vP, vL);
+    var showing = focusHS && focusBlend > 0.3 ? [focusHS.pos] : Object.keys(HS).filter(function (k) { return HS[k].stop === Math.round(u); }).map(function (k) { return HS[k].pos; });
+    updateFaders(dt, vP, vL, FREE.on ? null : showing, FREE.on);
 
     var near = Math.round(u), d = Math.abs(u - near), a = 1 - smooth(d / 0.38);
     if (near !== shownStop) {
