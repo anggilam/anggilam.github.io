@@ -69,12 +69,12 @@
   var LIST_ORDER = ['sleepypaws', 'frog', 'concept', 'mango', 'landscape', 'gameui', 'ted', 'graveyard', 'teddy', 'experimental'];
 
   var STOPS = [
-    { title: 'The island', pos: [0, 12, 29], tgt: [0, 0.3, 0] },
+    { title: 'The island', pos: [8.3, 10.2, 31.0], tgt: [0, 0.3, 0] },
     { title: 'Cactus forest', text: 'Spiky, quiet, and full of small secrets.', projects: ['graveyard'], pos: [-0.2, 8.5, -1.8], tgt: [-1.0, 1.8, -9.6] },
     { title: 'Animal pen', text: 'Two odd creatures graze here. A painter left an easel beside the fence.', projects: ['landscape'], pos: [-2.8, 6.2, 4.0], tgt: [-6.0, 0.6, -2.8] },
     { title: 'The mochi house', text: 'Hay, an old TV, and something watching from the bales.', projects: ['ted', 'teddy'], pos: [-10.9, 3.5, 12.6], tgt: [-7.1, 1.1, 6.9] },
     { title: 'Greenhouse cafe', text: 'Step inside: glass, wire, and far too many plants. The coffee is imaginary.', projects: ['mango', 'frog'], pos: [0.3, 2.3, 9.0], tgt: [1.5, 1.0, 5.5] },
-    { title: 'Upstairs workspace', text: 'Up a small stair, a loft inside the greenhouse.', projects: ['sleepypaws', 'concept', 'gameui'], pos: [3.1, 3.6, 6.6], tgt: [4.4, 1.9, 1.2] },
+    { title: 'Upstairs workspace', text: 'Up a small stair, a loft inside the greenhouse.', projects: ['sleepypaws', 'gameui'], pos: [3.1, 3.6, 6.6], tgt: [4.4, 1.9, 1.2] },
     { title: 'The falls and the grey-sand beach', text: 'Water cascades off the edge into a floating pool. Say hi at the sign, or poke the crab.', projects: ['contact'], pos: [17.0, 3.2, 2.6], tgt: [9.6, -3.6, -6.0] }
   ];
   var N = STOPS.length;
@@ -230,7 +230,7 @@
     night:  { label: 'a starry night',   sky: ['#030818', '#0d2050', '#1f4a8a'], hemi: [0x8a9cff, 0x141436, 0.32], sun: [0xa8baff, 0.26, [10, 24, -8]], fog: [0x0f2552, 0.010], cloud: [0x8fa2d8, 0.14], stars: 1 },
     cloudy: { label: 'an overcast sky',  sky: ['#1a1f40', '#3a4a86', '#7f92c8'], hemi: [0xd4d8ff, 0x2e3058, 0.46], sun: [0xe8e8ff, 0.3, [-10, 24, 10]], fog: [0x6a76a8, 0.022], cloud: [0xd8dcff, 0.42] },
     snow:   { label: 'soft snow',        sky: ['#1a2148', '#3e4f90', '#a9c0e8'], hemi: [0xe2ecff, 0x2c3466, 0.5], sun: [0xeef2ff, 0.28, [-10, 24, 10]], fog: [0x6f86c0, 0.018], cloud: [0xe8eeff, 0.45], snow: 1 },
-    storm:  { label: 'a stormy sky',   sky: ['#0a0820', '#231a5c', '#4b3d8f'], hemi: [0xa89cff, 0x1a1440, 0.32], sun: [0xc0b4ff, 0.14, [-10, 24, 10]], fog: [0x2c2466, 0.02], cloud: [0x6c5fa8, 0.52], rain: 1 }
+    rain:   { label: 'gentle rain',      sky: ['#101a33', '#2b3e6b', '#6b86b6'], hemi: [0xbfd2ff, 0x1e2440, 0.4], sun: [0xd6e2ff, 0.22, [-10, 24, 10]], fog: [0x3a4c78, 0.015], cloud: [0xa9b8de, 0.42], rain: 1 }
   };
   var weatherEl = document.getElementById('weather'), flashEl = document.getElementById('flash'), vignetteEl = document.getElementById('vignette');
   var envCur = null, envTo = null, envT = 1;
@@ -271,12 +271,12 @@
     var next = preview ? envFromPreset(WX[cond]) : presetFor(cond);
     if (preview) next.label = WX[cond].label;
     envTo = next; envT = envCur ? 0 : 1; if (!envCur) envCur = next;
-    weatherEl.textContent = 'Island weather: ' + next.label + (preview ? ' (preview)' : real ? ', matched to today\u2019s Boston sky' : '');
+    weatherEl.textContent = 'Island weather: ' + next.label + (preview ? '' : real ? ', matched to today\u2019s Boston sky' : '');
     Array.prototype.forEach.call(document.querySelectorAll('.wx-pick button'), function (b) { b.setAttribute('aria-pressed', (preview ? cond : 'live') === b.dataset.wx ? 'true' : 'false'); });
   }
   (function () { // a mood for today, so it changes daily even without a connection
     var d = new Date(), day = Math.floor(d.getTime() / 864e5), m = bostonNow().month;
-    var pool = (m >= 10 || m <= 2) ? ['clear', 'cloudy', 'snow', 'clear', 'snow'] : ['clear', 'cloudy', 'clear', 'storm', 'clear'];
+    var pool = (m >= 10 || m <= 2) ? ['clear', 'cloudy', 'snow', 'clear', 'snow'] : ['clear', 'cloudy', 'clear', 'rain', 'clear'];
     setWeather(pool[((day * 2654435761) >>> 0) % pool.length], false);
   })();
   (function realWeather() {
@@ -284,13 +284,10 @@
     function withTimeout(pr, ms) { return Promise.race([pr, new Promise(function (_, rej) { setTimeout(function () { rej(new Error('timeout')); }, ms); })]); }
     withTimeout(fetch('https://api.open-meteo.com/v1/forecast?latitude=42.36&longitude=-71.06&current=weather_code&timezone=America%2FNew_York').then(function (r) { return r.json(); }), 6000).then(function (w) {
       var c = w && w.current ? w.current.weather_code : null; if (c === null || c === undefined) return;
-      var cond = c <= 1 ? 'clear' : (c >= 71 && c <= 77) || c === 85 || c === 86 ? 'snow' : c >= 95 ? 'storm' : 'cloudy';
+      var cond = c <= 1 ? 'clear' : (c >= 71 && c <= 77) || c === 85 || c === 86 ? 'snow' : (c >= 51 && c <= 67) || (c >= 80 && c <= 82) || c >= 95 ? 'rain' : 'cloudy';
       setWeather(cond, true);
     }).catch(function () {});
   })();
-  // Weather preview buttons. Keep false for the public site; open the site with ?preview to see them anyway.
-  var SHOW_WEATHER_BUTTONS = false;
-  if (!SHOW_WEATHER_BUTTONS && !/preview/.test(location.search)) Array.prototype.forEach.call(document.querySelectorAll('.wx-pick'), function (el) { el.style.display = 'none'; });
   function previewWeather(cond) {
     if (cond === 'live' || !WX[cond]) { previewing = null; setWeather(liveCond, liveReal); }
     else { previewing = cond; setWeather(cond, false, true); }
@@ -298,13 +295,14 @@
   Array.prototype.forEach.call(document.querySelectorAll('.wx-pick button'), function (b) {
     b.addEventListener('click', function () { previewWeather(b.dataset.wx); });
   });
-  function hashWeather() { var h = (location.hash || '').replace('#', ''); if (WX[h]) previewWeather(h); }
-  window.addEventListener('hashchange', hashWeather); hashWeather();
+  function hashWeather() { var h = (location.hash || '').replace('#', ''); if (h === 'storm') h = 'rain'; if (WX[h]) previewWeather(h); return !!WX[h]; }
+  window.addEventListener('hashchange', hashWeather);
+  if (!hashWeather()) { previewWeather('snow'); envCur = envTo; envT = 1; } // snow is the island's default; Live switches to today's Boston weather
   // rain, snow and stars
-  var RN = 900, rainPos = new Float32Array(RN * 6), rainGeo = new THREE.BufferGeometry();
-  for (var ri0 = 0; ri0 < RN; ri0++) { var rx = (Math.random() - 0.5) * 50, ry = -16 + Math.random() * 42, rz = (Math.random() - 0.5) * 50; rainPos.set([rx, ry, rz, rx + 0.12, ry + 0.7, rz], ri0 * 6); }
+  var RN = 520, rainPos = new Float32Array(RN * 6), rainGeo = new THREE.BufferGeometry();
+  for (var ri0 = 0; ri0 < RN; ri0++) { var rx = (Math.random() - 0.5) * 50, ry = -16 + Math.random() * 42, rz = (Math.random() - 0.5) * 50; rainPos.set([rx, ry, rz, rx + 0.06, ry + 0.5, rz], ri0 * 6); }
   rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
-  var rainLines = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: 0xb4ccf0, transparent: true, opacity: 0, depthWrite: false })); rainLines.frustumCulled = false; scene.add(rainLines);
+  var rainLines = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: 0xdce8ff, transparent: true, opacity: 0, depthWrite: false })); rainLines.frustumCulled = false; scene.add(rainLines);
   var SNN = 700, snowPos = new Float32Array(SNN * 3), snowGeo = new THREE.BufferGeometry();
   for (var si0 = 0; si0 < SNN; si0++) snowPos.set([(Math.random() - 0.5) * 50, -16 + Math.random() * 42, (Math.random() - 0.5) * 50], si0 * 3);
   snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
@@ -329,9 +327,9 @@
     if (sky !== lastSky) { document.body.style.background = sky + ' fixed'; lastSky = sky; }
     vignetteEl.style.opacity = (0.35 + 0.5 * dimW).toFixed(3);
     focusSpot.intensity = 2.4 * dimW;
-    rainLines.material.opacity = 0.42 * e.rain; rainLines.visible = e.rain > 0.02;
+    rainLines.material.opacity = 0.26 * e.rain; rainLines.visible = e.rain > 0.02;
     if (rainLines.visible && !reduce) {
-      for (var i = 0; i < RN; i++) { var o = i * 6; rainPos[o + 1] -= 26 * dt; rainPos[o + 4] -= 26 * dt; rainPos[o] -= 3 * dt; rainPos[o + 3] -= 3 * dt; if (rainPos[o + 1] < -16) { var x = (Math.random() - 0.5) * 50, z = (Math.random() - 0.5) * 50; rainPos.set([x, 26, z, x + 0.12, 26.7, z], o); } }
+      for (var i = 0; i < RN; i++) { var o = i * 6; rainPos[o + 1] -= 15 * dt; rainPos[o + 4] -= 15 * dt; rainPos[o] -= 1.2 * dt; rainPos[o + 3] -= 1.2 * dt; if (rainPos[o + 1] < -16) { var x = (Math.random() - 0.5) * 50, z = (Math.random() - 0.5) * 50; rainPos.set([x, 26, z, x + 0.06, 26.5, z], o); } }
       rainGeo.attributes.position.needsUpdate = true;
     }
     snowPts.material.opacity = 0.85 * e.snow; snowPts.visible = e.snow > 0.02;
@@ -548,7 +546,7 @@
   var CACT = { x: -0.8, z: -9.8 };          // cactus forest, back centre
   var PEN = { x: -6.3, z: -4.2 };           // animal pen, centre-left, the largest open area
   var MOCHI = { x: -7.2, z: 6.9 };          // mochi house, front-left
-  var ROCK_TIP = new THREE.Vector3(0, 0, 0), ROCK_FRAGS = [], CRAB = { hit: null, poke: null }, FADE_LATER = [], ISLAND_SIDES = [];
+  var ROCK_TIP = new THREE.Vector3(0, 0, 0), ROCK_FRAGS = [], CRAB = { hit: null, poke: null }, FADE_LATER = [], ISLAND_SIDES = [], CACTI = [], MOCHI_G = null, PEN_G = null;
   function hhash(x, y, z) { var s = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453; return s - Math.floor(s) - 0.5; }
 
   (function island() {
@@ -684,12 +682,12 @@
       }
     }
     // the tall cactus from the sketch: trunk, one small arm up on the right, one big low arm on the left
-    var big = new THREE.Group(); big.position.set(-9.8, 0, 0.6); big.rotation.y = 0.35; big.scale.setScalar(1.3); world.add(big); FADE_LATER.push(big);
+    var big = new THREE.Group(); big.position.set(-9.8, 0, 0.6); big.rotation.y = 0.35; big.scale.setScalar(1.3); world.add(big); FADE_LATER.push(big); CACTI.push(big);
     limb(big, [[285, 650], [283, 520], [280, 350], [277, 180], [276, 95]], [62, 50, 43, 40, 38], 0x4c9c66, 22);
     limb(big, [[290, 300], [340, 288], [370, 264], [383, 230], [385, 212]], [28, 25, 23, 22, 22], 0x4c9c66, 6);
     limb(big, [[262, 490], [200, 470], [140, 440], [108, 395], [102, 362]], [70, 58, 48, 44, 42], 0x4c9c66, 12);
     // the round-shouldered cactus with a ball on top
-    var barrel = new THREE.Group(); barrel.position.set(1.6, 0, -10.2); barrel.rotation.y = -0.2; barrel.scale.setScalar(1.3); world.add(barrel); FADE_LATER.push(barrel);
+    var barrel = new THREE.Group(); barrel.position.set(1.6, 0, -10.2); barrel.rotation.y = -0.2; barrel.scale.setScalar(1.3); world.add(barrel); FADE_LATER.push(barrel); CACTI.push(barrel);
     var prof = [[0.0, 0.0], [0.24, 0.0], [0.27, 0.14], [0.55, 0.26], [0.76, 0.52], [0.84, 0.95], [0.86, 1.25], [0.83, 1.45], [0.72, 1.56], [0.52, 1.52], [0.32, 1.45], [0.0, 1.43]].map(function (q) { return new THREE.Vector2(q[0] * 1.35, q[1] * 1.35); });
     var bodyGeo = new THREE.LatheGeometry(prof, 9); bodyGeo.computeVertexNormals();
     var body = new THREE.Mesh(bodyGeo, M(0x5fae6e)); body.castShadow = body.receiveShadow = true; barrel.add(body);
@@ -726,7 +724,7 @@
   /* ------------------------------------------------------------------ */
   /* Animal pen + painter's easel                                        */
   /* ------------------------------------------------------------------ */
-  var bobbers = [];
+  var bobbers = [], penStart = world.children.length;
   (function () {
     var px = PEN.x, pz = PEN.z, w = 2.4, d = 1.8;
     // outline of the pen (relative to its centre), traced loosely from the sketch's lumpy enclosure
@@ -766,6 +764,11 @@
       }
     });
   })();
+  (function () { // gather the pen (fence, dirt, creatures, grass) into one group so it can be turned as a whole
+    PEN_G = new THREE.Group(); PEN_G.position.set(PEN.x, 0, PEN.z);
+    world.children.slice(penStart).forEach(function (o) { world.remove(o); o.position.x -= PEN.x; o.position.z -= PEN.z; PEN_G.add(o); });
+    world.add(PEN_G);
+  })();
 
   function buildEasel() {
     var g = new THREE.Group(); g.position.set(-5.0, 0, 1.0); g.rotation.y = 0.35; world.add(g);
@@ -785,7 +788,7 @@
   /* ------------------------------------------------------------------ */
   var barnHS = {};
   (function buildBarn() {
-    var g = new THREE.Group(); g.position.set(MOCHI.x, 0, MOCHI.z); g.rotation.y = -0.6; world.add(g);
+    var g = new THREE.Group(); g.position.set(MOCHI.x, 0, MOCHI.z); g.rotation.y = -0.6; world.add(g); MOCHI_G = g;
     // a sakuramochi shaped like a soft rounded cube: pink mochi outside, a see-through red bean layer inside,
     // one big bite through both layers (the way in), wrapped in a salt-pickled cherry leaf
     var wrap = new THREE.Group(); g.add(wrap); FADE_LATER.push(wrap);
@@ -925,7 +928,9 @@
   var domeShell = null;
   (function buildDome() {
     var g = new THREE.Group(); g.position.set(GX, 0, GZ); GH.add(g);
-    var geo = new THREE.IcosahedronGeometry(DR, 1).toNonIndexed(), p = geo.attributes.position, keep = [];
+    // turn the geodesic ball so one corner points straight up: the dome is then symmetric all the way round and sits level
+    var geo0 = new THREE.IcosahedronGeometry(DR, 1); geo0.rotateX(-Math.atan((1 + Math.sqrt(5)) / 2));
+    var geo = geo0.toNonIndexed(), p = geo.attributes.position, keep = [];
     for (var i = 0; i < p.count; i += 3) {
       var cy = (p.getY(i) + p.getY(i + 1) + p.getY(i + 2)) / 3;
       if (cy > 0.05) for (var k = 0; k < 3; k++) {
@@ -984,7 +989,6 @@
     var bd = new THREE.Group(); bd.position.set(3.2, 0, 3.9); bd.rotation.y = -0.4; GH.add(bd);
     box(0.7, 0.9, 0.05, 0x2f3a36, 0, 0.7, 0, bd); plane(0.62, 0.82, texSign('cafe', 128, 192, '#2f3a36', '#f6f1e6', 52), 0, 0.7, 0.03, bd);
     cyl(0.03, 0.03, 0.4, 4, 0x8a5a3c, -0.25, 0.2, -0.15, bd).rotation.x = 0.2; cyl(0.03, 0.03, 0.4, 4, 0x8a5a3c, 0.25, 0.2, -0.15, bd).rotation.x = 0.2;
-    table(0.4, -0.6, 0xff8fa3, 0x9d90e0); table(2.4, 6.0, 0xffd36b, 0x6cc4a8); table(4.6, 3.8, 0x7ec8e3, 0xff9f7a);
     for (var i = 0; i < 24; i++) {
       var a = i / 24 * 6.283, m = new THREE.MeshBasicMaterial({ color: 0xffe9a8, transparent: true });
       var b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.07, 0), m);
@@ -1117,7 +1121,6 @@
     });
     strut(new THREE.Vector3(sx + 0.28, 0.85, 1.0 + stepN * run), new THREE.Vector3(sx + 0.28, FL + 0.55, 1.0), 0.02, 0x8a5a3c, loft);
     cyl(0.02, 0.02, 0.85, 4, 0x8a5a3c, sx + 0.28, 0.425, 1.0 + stepN * run, loft);
-    box(1.9, 0.02, 1.5, 0x8fc49a, 3.7, FL + 0.025, 0.0, GH); // rug
     var barLight = new THREE.PointLight(0xffe2b8, 0.6, 5, 2); barLight.position.set(1.2, 2.2, 3.4); GH.add(barLight);
 
     // bed + cat: the bed runs front to back at the back left of the loft; the cat curls near the edge of the futon
@@ -1133,34 +1136,18 @@
     var z = new THREE.Sprite(new THREE.SpriteMaterial({ map: texZ(), transparent: true, depthWrite: false })); z.scale.set(0.5, 0.25, 1); z.position.set(0.2, 0.5, 0.3); cat.add(z);
     anims.push(function (t) { cat.scale.y = 1 + Math.sin(t * 1.8) * 0.05; z.position.y = 0.4 + ((t * 0.3) % 1) * 0.35; z.material.opacity = 1 - ((t * 0.3) % 1); });
 
-    // desk, moved up to the front right of the loft
-    box(1.15, 0.06, 0.55, 0xe8c898, 4.9, FL + 0.74, 0.1, GH);
-    [[-0.5, -0.2], [0.5, -0.2], [-0.5, 0.2], [0.5, 0.2]].forEach(function (l) { cyl(0.03, 0.03, 0.72, 4, 0x6b5a4e, 4.9 + l[0], FL + 0.37, 0.1 + l[1], GH); });
-    box(0.55, 0.36, 0.05, 0x2f2a3a, 4.9, FL + 1.07, -0.05, GH); box(0.07, 0.15, 0.07, 0x2f2a3a, 4.9, FL + 0.85, -0.05, GH);
-    plane(0.5, 0.31, texApp(), 4.9, FL + 1.07, -0.022, GH);
-    sph(0.1, 0xd98c6a, 4.45, FL + 0.86, -0.05, GH, 0); sph(0.12, 0x62bf78, 4.45, FL + 0.98, -0.05, GH, 0);
-    var chair = new THREE.Group(); chair.position.set(4.9, FL, 0.75); GH.add(chair);
-    box(0.4, 0.05, 0.4, 0x9d90e0, 0, 0.45, 0, chair); box(0.4, 0.4, 0.05, 0x9d90e0, 0, 0.7, 0.18, chair); cyl(0.03, 0.03, 0.45, 4, 0x6b5a4e, 0, 0.22, 0, chair);
+    // desk, set back at the far right of the loft
+    box(1.15, 0.06, 0.55, 0xe8c898, 4.9, FL + 0.74, -1.7, GH);
+    [[-0.5, -0.2], [0.5, -0.2], [-0.5, 0.2], [0.5, 0.2]].forEach(function (l) { cyl(0.03, 0.03, 0.72, 4, 0x6b5a4e, 4.9 + l[0], FL + 0.37, -1.7 + l[1], GH); });
+    box(0.55, 0.36, 0.05, 0x2f2a3a, 4.9, FL + 1.07, -1.85, GH); box(0.07, 0.15, 0.07, 0x2f2a3a, 4.9, FL + 0.85, -1.85, GH);
+    plane(0.5, 0.31, texApp(), 4.9, FL + 1.07, -1.822, GH);
+    sph(0.1, 0xd98c6a, 4.45, FL + 0.86, -1.85, GH, 0); sph(0.12, 0x62bf78, 4.45, FL + 0.98, -1.85, GH, 0);
 
-    // handheld console
-    var hh = new THREE.Group(); hh.position.set(5.22, FL + 0.8, 0.27); hh.rotation.set(-0.35, -0.2, 0); GH.add(hh); cabinParts.console = hh;
+    // handheld console, lying flat on the desk
+    var hh = new THREE.Group(); hh.position.set(5.15, FL + 0.795, -1.55); hh.rotation.set(0, -0.25, 0); GH.add(hh); cabinParts.console = hh;
     box(0.34, 0.04, 0.2, 0xff7a9a, 0, 0, 0, hh); plane(0.14, 0.1, texHandheld(), 0, 0.025, 0, hh).rotation.x = -Math.PI / 2;
     cyl(0.018, 0.018, 0.012, 6, 0x2f2a3a, -0.12, 0.025, 0.02, hh); cyl(0.014, 0.014, 0.012, 6, 0xffd36b, 0.11, 0.025, 0.0, hh); cyl(0.014, 0.014, 0.012, 6, 0x6cc4a8, 0.14, 0.025, 0.03, hh);
 
-    // easel with character painting
-    var e = new THREE.Group(); e.position.set(4.1, FL, -1.3); GH.add(e); cabinParts.easel = e;
-    // a proper A-frame easel: two front legs leaning back to meet at the top, a back leg propping it up,
-    // a ledge the canvas stands on, and a clamp holding its top, so the canvas leans back at a slope
-    var V3e = THREE.Vector3, ewood = 0x8a5a3c, slope = Math.atan2(0.3, 1.6);
-    strut(new V3e(-0.32, 0, 0.12), new V3e(-0.02, 1.6, -0.18), 0.024, ewood, e); strut(new V3e(0.32, 0, 0.12), new V3e(0.02, 1.6, -0.18), 0.024, ewood, e);
-    strut(new V3e(0, 0, -0.6), new V3e(0, 1.52, -0.19), 0.022, ewood, e);
-    strut(new V3e(-0.14, 1.2, -0.105), new V3e(0.14, 1.2, -0.105), 0.016, ewood, e);
-    var ledge = box(0.72, 0.035, 0.09, ewood, 0, 0.55, 0.06, e); ledge.rotation.x = -slope;
-    box(0.72, 0.05, 0.015, ewood, 0, 0.585, 0.1, e).rotation.x = -slope;
-    var canv = new THREE.Group(); canv.position.set(0, 0.57 + 0.39 * Math.cos(slope), 0.12 - 0.1875 * 0.95 + 0.045); canv.rotation.x = -slope; e.add(canv);
-    box(0.6, 0.78, 0.04, 0xf3ede2, 0, 0, 0, canv); plane(0.52, 0.7, texCharacter(), 0, 0, 0.025, canv);
-    box(0.14, 0.05, 0.09, ewood, 0, 0.4, 0, canv);
-    cyl(0.05, 0.05, 0.1, 6, 0x6aa9c9, 0.4, 0.05, 0.25, e);
   })();
 
   /* ------------------------------------------------------------------ */
@@ -1713,9 +1700,40 @@
   register('mango', 4, buildMango(), 0.6, [0.3, 0.6, 1.9], 0.5);
   register('frog', 4, buildFrog(), 0.6, [0.5, 0.5, 1.9], 0.7);
   register('sleepypaws', 5, cabinParts.cat, 0.6, [0.9, 0.9, 2.4], 0.6);
-  register('concept', 5, cabinParts.easel, 0.7, [-0.3, 1.1, 2.3], 1.3);
   register('gameui', 5, cabinParts.console, 0.4, [0.1, 0.8, 1.5], 0.45);
   register('contact', 6, cabinParts.sign, 0.6, [0.2, 0.7, 2.3], 1.1);
+
+  /* ----- Six design options to compare: colours plus a few placement changes ----- */
+  var DESIGNS = [
+    { name: 'Original', colors: {}, pen: 0, mochi: 0, cact: 0 },
+    { name: 'Spring meadow', pen: 0.5, mochi: 0.15, cact: 0.4, colors: { 0x6fcf4f: 0x8fd36a, 0x86dc5e: 0xa6e07f, 0x5ec243: 0x76c255, 0xc98a4f: 0xb98a5a, 0xe0ac6e: 0xead2a8, 0xf4fbff: 0xffffff, 0xd9c8aa: 0xe8dcc8, 0xead9bd: 0xf2e6d0, 0xf5e8d1: 0xfbf3e4, 0xc9b08a: 0xd8c09a, 0x4c9c66: 0x5aa86f, 0x5fae6e: 0x6cbb7a, 0xf6b3c6: 0xf8bfd0 } },
+    { name: 'Autumn harvest', pen: -0.6, mochi: 0.25, cact: -0.5, colors: { 0x6fcf4f: 0xa7b45a, 0x86dc5e: 0xc2b35a, 0x5ec243: 0x8f9a45, 0xc98a4f: 0x9a5a35, 0xe0ac6e: 0xc8885a, 0xf4fbff: 0xf0d9b5, 0xd9c8aa: 0xc9a27a, 0xead9bd: 0xe6cfa8, 0xf5e8d1: 0xf0dcb8, 0xc9b08a: 0xb8925e, 0x4c9c66: 0x6a8a4a, 0x5fae6e: 0x7f9a55, 0xf6b3c6: 0xf2a68c } },
+    { name: 'Desert dusk', pen: 1.2, mochi: -0.2, cact: 0.9, colors: { 0x6fcf4f: 0xd9b77a, 0x86dc5e: 0xe6c88f, 0x5ec243: 0xc9a466, 0xc98a4f: 0xb5774a, 0xe0ac6e: 0xd48a5a, 0xf4fbff: 0xffe8cf, 0xd9c8aa: 0xe0b88a, 0xead9bd: 0xf0dcc0, 0xf5e8d1: 0xf8ead6, 0xc9b08a: 0xc9a070, 0x4c9c66: 0x4f9a6a, 0x5fae6e: 0x63ad78, 0xf6b3c6: 0xf4a9bd } },
+    { name: 'Mint pastel', pen: -0.3, mochi: -0.1, cact: 0.2, colors: { 0x6fcf4f: 0xa8e6c8, 0x86dc5e: 0xc0f0d8, 0x5ec243: 0x8fd6b5, 0xc98a4f: 0xb9a3d6, 0xe0ac6e: 0xd8c6f0, 0xf4fbff: 0xffffff, 0xd9c8aa: 0xd9e8f5, 0xead9bd: 0xf3f0ff, 0xf5e8d1: 0xfffaf0, 0xc9b08a: 0xe8d6c0, 0x4c9c66: 0x5fbf9a, 0x5fae6e: 0x7fd0ac, 0xf6b3c6: 0xffc2d6 } },
+    { name: 'Nordic moss', pen: 0.9, mochi: 0.1, cact: -0.9, colors: { 0x6fcf4f: 0x6f9a5a, 0x86dc5e: 0x86ad6c, 0x5ec243: 0x5a8749, 0xc98a4f: 0x6e6258, 0xe0ac6e: 0xa9a39b, 0xf4fbff: 0x3a3f46, 0xd9c8aa: 0x8a8078, 0xead9bd: 0xd9d2c4, 0xf5e8d1: 0xece6da, 0xc9b08a: 0x9a8a72, 0x4c9c66: 0x4a7a5a, 0x5fae6e: 0x5a8a68, 0xf6b3c6: 0xf0b4c4 } }
+  ];
+  var designOrig = null;
+  function refreshHS() {
+    world.updateMatrixWorld(true);
+    Object.keys(HS).forEach(function (k) {
+      var h = HS[k], dy = h.base - h.pos.y; h.group.getWorldPosition(h.pos);
+      h.base = h.pos.y + dy; h.spr.position.set(h.pos.x, h.base, h.pos.z);
+      hitList.forEach(function (m) { if (m.userData.hs === k) m.position.copy(h.pos); });
+    });
+  }
+  function applyDesign(i) {
+    var d = DESIGNS[i] || DESIGNS[0];
+    if (!designOrig) { designOrig = []; scene.traverse(function (o) { if (!o.material || !o.material.color) return; [].concat(o.material).forEach(function (m) { if (m.userData.origHex === undefined) { m.userData.origHex = m.color.getHex(); designOrig.push(m); } }); }); }
+    designOrig.forEach(function (m) { var o = m.userData.origHex, n = d.colors[o]; m.color.setHex(n !== undefined ? n : o); });
+    if (PEN_G) PEN_G.rotation.y = d.pen;
+    if (MOCHI_G) MOCHI_G.rotation.y = -0.6 + d.mochi;
+    if (CACTI[0]) CACTI[0].rotation.y = 0.35 + d.cact; if (CACTI[1]) CACTI[1].rotation.y = -0.2 + d.cact * 0.7;
+    refreshHS();
+    Array.prototype.forEach.call(document.querySelectorAll('.design-pick button'), function (b) { b.setAttribute('aria-pressed', +b.dataset.design === i ? 'true' : 'false'); });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.design-pick button'), function (b) { b.addEventListener('click', function () { applyDesign(+b.dataset.design); }); });
+  function hashDesign() { var m = /^#design([1-6])$/.exec(location.hash || ''); if (m) applyDesign(+m[1] - 1); }
+  window.addEventListener('hashchange', hashDesign); hashDesign();
 
   /* ------------------------------------------------------------------ */
   /* Camera path                                                         */
@@ -1733,7 +1751,7 @@
     posCurve = new THREE.CatmullRomCurve3(pp, false, 'catmullrom', 0.5);
     lookCurve = new THREE.CatmullRomCurve3(ll, false, 'catmullrom', 0.5);
   }
-  var viewW = 1, viewH = 1, lastShift = -1;
+  var viewW = 1, viewH = 1, lastShift = -1, HERO_SHIFT = 0.17;
   // Slides the picture sideways (for the intro text) without turning the camera, so the island stays level.
   function applyView(shift) {
     if (Math.abs(shift - lastShift) < 0.0005) return;
@@ -1884,7 +1902,7 @@
       vP.lerp(fP, b); vL.lerp(fL, b);
     }
     if (FREE.on) freeStep(dt);
-    applyView(FREE.on ? 0 : 0.17 * clamp((aspect - 0.9) / 0.5, 0, 1) * (1 - smooth(u / 0.9)) * (1 - focusBlend));
+    applyView(FREE.on ? 0 : HERO_SHIFT * clamp((aspect - 0.9) / 0.5, 0, 1) * (1 - smooth(u / 0.9)) * (1 - focusBlend));
     camera.position.copy(vP); camera.lookAt(vL);
     var dimW = FREE.on ? 0.25 : Math.max(smooth(u / 0.8), focusBlend);
     focusSpot.position.set(vL.x + 1.5, vL.y + 7, vL.z + 3); focusSpot.target.position.copy(vL);
